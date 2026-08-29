@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Rakshika"
 include(":app")
+include(":saathi")

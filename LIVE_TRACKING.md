@@ -5,6 +5,14 @@ live position to **Firebase Realtime Database** over its REST API, so a second
 app can follow along in realtime. No Firebase SDK or `google-services.json` is
 needed — just a database URL.
 
+Two readers ship with the repo:
+
+- **`tracker.html`** — a one-file web page, open it in any browser.
+- **`:saathi`** — **RakshikaSaathi**, a full companion Android app (separate
+  installable APK) that shows the live map, a ride-updates log, and fires
+  **system notifications** for ride-started / SOS / arrived. See
+  [the RakshikaSaathi section](#rakshikasaathi-companion-app) below.
+
 ## 1. Create the database (one time, ~2 min)
 
 1. <https://console.firebase.google.com> → **Add project** (disable Analytics to be quick).
@@ -84,3 +92,56 @@ and the SDK's socket listeners. Reading/writing data just needs URLs:
 
 All writes are best-effort — if the URL is unset or the network fails, the ride
 still plays locally and the "Sharing live" chip turns grey / red.
+
+---
+
+## RakshikaSaathi companion app
+
+`:saathi` is a second app module (`com.rakshika.saathi`, minSdk 26) — the
+guardian's phone. It **only reads** the trip; it never writes.
+
+### How it tracks in realtime
+
+`FirebaseTripStream` opens the RTDB REST **streaming** endpoint
+(`GET <DATABASE_URL>/liveTrips/demo.json` with `Accept: text/event-stream`).
+Firebase then pushes `put` / `patch` server-sent events; the class keeps a local
+mirror of the node and emits it on every change. A foreground service
+(`TrackingService`) holds that stream open so alerts arrive even when the app is
+backgrounded, and reconnects automatically on drops.
+
+### What it shows
+
+- **Live map** — the route polyline, start/destination pins and a moving dot,
+  drawn on a Canvas (no Google Maps key), auto-fitted to the route bounds.
+- **Trip card** — destination, chosen route (safest / faster) + safety score,
+  ETA counting down, progress bar, the RAG reasons.
+- **Updates log** — newest-first list of derived moments.
+- **SOS banner** — full-width red banner while `sos == true`.
+
+### Notifications (`TripRepository` derives, `TrackingService` posts)
+
+| Moment | Channel / priority |
+|---|---|
+| Ride started → destination, route, ETA | Ride updates · default |
+| Halfway there | log only (no notification) |
+| **SOS triggered** | SOS alerts · **high**, vibration, `CATEGORY_CALL` |
+| Arrived safely | Ride updates · default |
+| Ride ended / stream lost | log only |
+| Ongoing "tracking…" notice | Live tracking · low, persistent |
+
+### Run it
+
+1. Same `DATABASE_URL` is already set in
+   `saathi/src/main/java/com/rakshika/saathi/data/Config.kt` (keep it in sync
+   with `LiveShareConfig.kt`). `COMPANION_NAME` there is the name shown in the
+   UI/alerts ("Priya" by default).
+2. In Android Studio, pick the **saathi** run configuration (or
+   `./gradlew :saathi:installDebug`) and launch it — ideally on a *second*
+   device/emulator. Grant the notifications permission when asked.
+3. Start a ride in the Rakshika app. RakshikaSaathi lights up within ~1 s:
+   map moves, log fills, notifications fire. Holding SOS mid-ride raises the
+   high-priority alert; arrival closes it out.
+
+Verified end-to-end against the live database (SSE stream + event derivation)
+with `scratchpad/sim.py`: start → halfway → SOS → arrived → ended all fire in
+order. The Kotlin `:saathi:assembleDebug` builds clean.

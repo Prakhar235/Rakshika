@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- shield -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,20 L78,30 V54 C78,72 66,84 54,90 C42,84 30,72 30,54 V30 Z" />
+    <!-- location pin inside -->
+    <path
+        android:fillColor="#1F6F4A"
+        android:pathData="M54,38 A10,10 0 0,1 64,48 C64,56 54,70 54,70 C54,70 44,56 44,48 A10,10 0 0,1 54,38 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,44 A4,4 0 1,1 54,52 A4,4 0 0,1 54,44 Z" />
+</vector>
