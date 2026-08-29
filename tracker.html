@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rakshika · Live Tracker</title>
+
+<!-- Leaflet (map) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<!-- Firebase (Realtime Database, compat build) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+  :root {
+    --bg: #14110e; --panel: #1e1a16; --line: #34302a;
+    --text: #f3efe8; --muted: #a49a8c;
+    --green: #3b8f5c; --amber: #c98a2e; --red: #d8365e; --blue: #378add;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-columns: 340px 1fr; height: 100vh;
+  }
+  @media (max-width: 720px) { body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } }
+
+  #panel { padding: 20px; overflow-y: auto; border-right: 1px solid var(--line); }
+  #map { height: 100%; width: 100%; background: #2a2622; }
+
+  h1 { font-size: 15px; letter-spacing: .3px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--green); } .dot.wait { background: var(--amber); } .dot.err { background: var(--red); }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 12px; }
+  .card h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 8px; }
+  .big { font-size: 22px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 4px; }
+  .muted { color: var(--muted); }
+  .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+  .pill.safe { color: var(--green); border-color: var(--green); }
+  .pill.fast { color: var(--amber); border-color: var(--amber); }
+
+  #sos {
+    display: none; margin-top: 12px; padding: 14px; border-radius: 12px;
+    background: rgba(216,54,94,.15); border: 1px solid var(--red); color: #ff9db4;
+    font-weight: 600; text-align: center; animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+  #empty { margin-top: 12px; color: var(--muted); }
+  code { background: #000; padding: 1px 5px; border-radius: 4px; font-size: 12px; color: #d7cbb8; }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <h1>Rakshika · Live Tracker</h1>
+    <div class="sub">Watching another device's ride in realtime.</div>
+    <div class="conn"><span id="connDot" class="dot wait"></span><span id="connText">connecting…</span></div>
+
+    <div id="sos">⚠ SOS TRIGGERED — contacts alerted</div>
+
+    <div id="empty">Waiting for a ride to start on the phone…<br />
+      Open the Rakshika app → <b>Demo</b> tab → <b>Try it yourself</b>, pick a route and press Start.</div>
+
+    <div id="live" style="display:none">
+      <div class="card">
+        <h2>Destination</h2>
+        <div class="big" id="destName">—</div>
+        <div class="muted" id="destArea">—</div>
+      </div>
+      <div class="card">
+        <h2>Chosen route</h2>
+        <div class="row">
+          <span><span id="routeKind" class="pill">—</span> <span id="routeLabel"></span></span>
+          <span class="muted"><span id="routeScore">—</span>/100</span>
+        </div>
+        <div class="row"><span class="muted">ETA remaining</span><span class="big" id="eta">—</span></div>
+        <div class="row"><span class="muted">Progress</span><span id="progress">—</span></div>
+      </div>
+      <div class="card">
+        <h2>Status</h2>
+        <div class="row"><span id="status">—</span><span class="muted" id="updated"></span></div>
+        <div class="row muted" style="font-size:12px"><span id="coords">—</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+
+<script>
+  /* ==== 1. PASTE YOUR REALTIME DATABASE URL HERE (same one as LiveShareConfig.kt) ==== */
+  var DATABASE_URL = "https://kriger-campus-32cf7-default-rtdb.firebaseio.com";
+  var TRIP_ID = "demo";
+  /* ================================================================================= */
+
+  var connDot = document.getElementById("connDot");
+  var connText = document.getElementById("connText");
+  function conn(state, text) { connDot.className = "dot " + state; connText.textContent = text; }
+
+  var map = L.map("map", { zoomControl: true }).setView([12.972, 77.596], 14);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: "© OpenStreetMap"
+  }).addTo(map);
+
+  var routeLine = null, startMarker = null, endMarker = null, meMarker = null, fitted = false;
+  var currentTripStart = null;
+
+  function resetMap() {
+    [routeLine, startMarker, endMarker, meMarker].forEach(function (l) { if (l) map.removeLayer(l); });
+    routeLine = startMarker = endMarker = meMarker = null;
+    fitted = false;
+  }
+
+  var meIcon = L.divIcon({
+    className: "", iconSize: [22, 22],
+    html: '<div style="width:22px;height:22px;border-radius:50%;background:#3b8f5c;' +
+          'border:3px solid #fff;box-shadow:0 0 0 6px rgba(59,143,92,.3)"></div>'
+  });
+
+  if (DATABASE_URL.indexOf("YOUR-PROJECT") !== -1) {
+    conn("err", "set DATABASE_URL in tracker.html");
+  } else {
+    firebase.initializeApp({ databaseURL: DATABASE_URL });
+    var db = firebase.database();
+
+    db.ref(".info/connected").on("value", function (s) {
+      if (s.val() === true) conn("on", "connected to Firebase");
+      else conn("wait", "reconnecting…");
+    });
+
+    db.ref("liveTrips/" + TRIP_ID).on("value", function (snap) {
+      render(snap.val());
+    }, function (err) {
+      conn("err", "permission denied — check DB rules");
+      console.error(err);
+    });
+  }
+
+  function fmtAgo(ts) {
+    if (!ts) return "";
+    var s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    return s < 2 ? "just now" : s + "s ago";
+  }
+
+  function render(t) {
+    var live = document.getElementById("live");
+    var empty = document.getElementById("empty");
+    var sos = document.getElementById("sos");
+
+    if (!t || t.status === "ended" || !t.location) {
+      live.style.display = "none";
+      empty.style.display = "block";
+      sos.style.display = "none";
+      resetMap();
+      currentTripStart = null;
+      return;
+    }
+
+    // A new ride started (or the route changed) — clear the old line so it redraws.
+    if (t.startedAt !== currentTripStart) {
+      resetMap();
+      currentTripStart = t.startedAt;
+    }
+    live.style.display = "block";
+    empty.style.display = "none";
+    sos.style.display = t.sos === true ? "block" : "none";
+
+    if (t.destination) {
+      document.getElementById("destName").textContent = t.destination.name || "—";
+      document.getElementById("destArea").textContent = t.destination.area || "";
+    }
+    if (t.route) {
+      var kind = document.getElementById("routeKind");
+      kind.textContent = t.route.kind === "safe" ? "Safest" : "Faster";
+      kind.className = "pill " + (t.route.kind === "safe" ? "safe" : "fast");
+      document.getElementById("routeLabel").textContent = t.route.label || "";
+      document.getElementById("routeScore").textContent = t.route.safetyScore != null ? t.route.safetyScore : "—";
+    }
+
+    var loc = t.location;
+    document.getElementById("eta").textContent = (loc.etaMinutesLeft != null ? loc.etaMinutesLeft : "—") + " min";
+    document.getElementById("progress").textContent = Math.round((loc.progress || 0) * 100) + "%";
+    document.getElementById("status").textContent =
+      t.status === "arrived" ? "✓ Arrived safely" : "● Riding";
+    document.getElementById("updated").textContent = "updated " + fmtAgo(loc.updatedAt || t.updatedAt);
+    document.getElementById("coords").textContent =
+      loc.lat != null ? loc.lat.toFixed(5) + ", " + loc.lng.toFixed(5) : "—";
+
+    // --- map ---
+    if (t.polyline && t.polyline.length && !routeLine) {
+      var pts = t.polyline.map(function (p) { return [p.lat, p.lng]; });
+      routeLine = L.polyline(pts, {
+        color: t.route && t.route.kind === "fast" ? "#c98a2e" : "#3b8f5c",
+        weight: 5, opacity: .9
+      }).addTo(map);
+      startMarker = L.circleMarker(pts[0], { radius: 7, color: "#fff", weight: 3, fillColor: "#378add", fillOpacity: 1 }).addTo(map);
+      endMarker = L.circleMarker(pts[pts.length - 1], { radius: 7, color: "#fff", weight: 3, fillColor: "#d8365e", fillOpacity: 1 }).addTo(map);
+    }
+    if (loc.lat != null) {
+      var here = [loc.lat, loc.lng];
+      if (!meMarker) meMarker = L.marker(here, { icon: meIcon }).addTo(map);
+      else meMarker.setLatLng(here);
+      if (!fitted && routeLine) { map.fitBounds(routeLine.getBounds().pad(0.25)); fitted = true; }
+      else map.panTo(here, { animate: true, duration: .3 });
+    }
+  }
+</script>
+</body>
+</html>

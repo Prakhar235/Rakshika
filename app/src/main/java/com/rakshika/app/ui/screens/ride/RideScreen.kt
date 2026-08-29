@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.live.LiveShareStatus
 import com.rakshika.app.rag.RagResult
 import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.RouteEvidence
@@ -63,12 +64,13 @@ import kotlinx.coroutines.isActive
 @Composable
 fun RideScreen(viewModel: RideViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
+    val liveStatus by viewModel.liveStatus.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         when (state.step) {
             RideStep.SEARCH -> SearchStep(state, viewModel::updateQuery, viewModel::selectDestination, viewModel::selectDataset)
             RideStep.ROUTES -> RoutesStep(state, viewModel::selectRoute, viewModel::backToSearch, viewModel::startRide)
-            RideStep.RIDING -> RidingStep(state, viewModel::triggerSos)
+            RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos)
             RideStep.ARRIVED -> ArrivedStep(state, viewModel::newRide)
         }
     }
@@ -463,7 +465,7 @@ private fun RagFooter(rag: RagResult) {
 /* ---------------- Riding ---------------- */
 
 @Composable
-private fun RidingStep(state: RideState, onSos: () -> Unit) {
+private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () -> Unit) {
     val destination = state.destination ?: return
 
     Box(Modifier.fillMaxSize()) {
@@ -491,9 +493,15 @@ private fun RidingStep(state: RideState, onSos: () -> Unit) {
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Navigation, contentDescription = null, tint = RakshikaGreen, modifier = Modifier.size(14.dp))
+            val (dotColor, label) = when (liveStatus) {
+                LiveShareStatus.LIVE -> RakshikaGreen to "Live on Firebase"
+                LiveShareStatus.CONNECTING -> RakshikaAmber to "Connecting to Firebase…"
+                LiveShareStatus.ERROR -> RakshikaRed to "Firebase unreachable"
+                LiveShareStatus.OFF -> TextSecondary to "Sharing live (local)"
+            }
+            Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor))
             Spacer(Modifier.width(6.dp))
-            Text("Sharing live · ${destination.name}", style = MaterialTheme.typography.labelSmall)
+            Text("$label · ${destination.name}", style = MaterialTheme.typography.labelSmall)
         }
 
         Column(

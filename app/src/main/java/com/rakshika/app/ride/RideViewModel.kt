@@ -3,8 +3,12 @@ package com.rakshika.app.ride
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.rag.RagRouteEngine
+import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.SafetyDatasets
+import com.rakshika.app.ui.mapkit.ROUTE_A
+import com.rakshika.app.ui.mapkit.ROUTE_B
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,8 +22,13 @@ class RideViewModel : ViewModel() {
     val state: StateFlow<RideState> = _state
 
     private val engine = RagRouteEngine()
+    private val live = LiveShareRepository(viewModelScope)
     private var rideJob: Job? = null
     private var assessJob: Job? = null
+
+    /** Firebase publish state + path, for the "Sharing live" chip on the ride screen. */
+    val liveStatus = live.status
+    val liveTripUrl = live.tripUrl
 
     fun updateQuery(text: String) {
         _state.update { it.copy(query = text) }
@@ -44,7 +53,16 @@ class RideViewModel : ViewModel() {
     fun backToSearch() {
         rideJob?.cancel()
         assessJob?.cancel()
+        live.endTrip()
         _state.update { RideState(query = it.query, selectedDatasetId = it.selectedDatasetId) }
+    }
+
+    /** The mock-map polyline the chosen corridor walks — ROUTE_B is the main road, ROUTE_A the back lane. */
+    private fun chosenPath() =
+        if (currentChoice()?.corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
+
+    private fun currentChoice() = _state.value.routes?.let {
+        if (_state.value.safeSelected) it.safe else it.fast
     }
 
     private fun runAssessment(place: Place, keepStep: Boolean) {
@@ -84,6 +102,12 @@ class RideViewModel : ViewModel() {
             )
         }
 
+        val path = chosenPath()
+        val destination = _state.value.destination
+        if (destination != null) {
+            live.startTrip(ORIGIN, destination, chosen, _state.value.safeSelected, path, chosen.minutes)
+        }
+
         rideJob = viewModelScope.launch {
             val totalSteps = 90
             val stepMs = 120L
@@ -95,20 +119,26 @@ class RideViewModel : ViewModel() {
                 if (progress >= 0.4f && _state.value.contactAmma == ContactStatus.NOTIFIED) {
                     _state.update { it.copy(contactAmma = ContactStatus.SEEN, contactRohan = ContactStatus.SEEN) }
                 }
+                // Push a location fix a few times a second so another app can follow along live.
+                if (step % 2 == 0) live.updateLocation(path, progress, minutesLeft)
                 delay(stepMs)
                 step++
             }
+            live.updateLocation(path, 1f, 0)
+            live.arrive()
             _state.update { it.copy(step = RideStep.ARRIVED, rideProgress = 1f, etaMinutesLeft = 0) }
         }
     }
 
     fun triggerSos() {
+        live.setSos(true)
         _state.update { it.copy(sosActive = true, contactRohan = ContactStatus.RESPONDING) }
     }
 
     fun newRide() {
         rideJob?.cancel()
         assessJob?.cancel()
+        live.endTrip()
         _state.update { RideState(selectedDatasetId = it.selectedDatasetId) }
     }
 
