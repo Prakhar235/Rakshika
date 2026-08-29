@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rakshika.app.alerts.AlertMessages
+import com.rakshika.app.alerts.Connectivity
 import com.rakshika.app.alerts.ContactsStore
 import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.AlertEvent
@@ -51,6 +52,8 @@ class RakshikaViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleOnlineMode() {
         _uiState.update { it.copy(isOnline = !it.isOnline) }
+        // Let the toggle force the SMS-fallback path so it can be demoed without cutting data.
+        Connectivity.demoForceOffline = !_uiState.value.isOnline
     }
 
     fun triggerSos(note: String = "") {

@@ -132,6 +132,27 @@ backgrounded, and reconnects automatically on drops.
 | Ride ended / stream lost | log only |
 | Ongoing "tracking…" notice | Live tracking · low, persistent |
 
+### SMS fallback — when Rakshika's phone has no data
+
+If the Rakshika phone has no usable data connection, it can't reach Firebase, so
+it sends the alert as a background **SMS** in the shared `[RKSH] …` wire format
+(see Rakshika's `alerts/AlertMessages.kt`). RakshikaSaathi picks that up:
+
+- `sms/SmsReceiver` (manifest `SMS_RECEIVED` broadcast receiver, `RECEIVE_SMS`
+  permission) fires on every inbound text.
+- `sms/SmsWire.parse` recognises the `[RKSH]` marker and pulls the **type**
+  (SOS / RIDE / ARRIVED / CHECKIN), the **approximate lat/lng** (4-decimal, from
+  the last fix the phone had), and the destination.
+- The alert is persisted (`SmsAlertStore`), pushed into `TripRepository.smsFix`,
+  logged, and raised as a notification (`SmsNotifier`, high-importance channel).
+- The tracker screen then shows an **"Alert received by SMS"** card with the
+  message text and the approximate point on a coarse-accuracy map (a halo, not a
+  precise dot — it's roughly street-block level).
+
+This path needs no data on the Saathi phone either — only cell signal for SMS.
+Verified: the parser extracts type + coords + destination for every
+`AlertMessages` template.
+
 ### Run it
 
 1. Same `DATABASE_URL` is already set in
@@ -140,11 +161,16 @@ backgrounded, and reconnects automatically on drops.
    name shown in the UI/alerts ("Priya" by default).
 2. Open `../RakshikaSaathi/` as its own project in Android Studio and Run it
    (or `cd ../RakshikaSaathi && ./gradlew :app:installDebug`) — ideally on a
-   *second* device/emulator. Grant the notifications permission when asked.
-3. Start a ride in the Rakshika app. RakshikaSaathi lights up within ~1 s:
-   map moves, log fills, notifications fire. Holding SOS mid-ride raises the
-   high-priority alert; arrival closes it out.
+   *second* device/emulator. Grant the notifications **and SMS** permissions
+   when asked.
+3. **Online path:** start a ride in the Rakshika app. RakshikaSaathi lights up
+   within ~1 s: map moves, log fills, notifications fire.
+4. **Offline path:** flip Rakshika's Home online/offline toggle to *offline*
+   (or turn off its data), then trigger SOS / start a ride. Rakshika sends an
+   SMS; RakshikaSaathi shows the "Alert received by SMS" card with the
+   approximate location. (On emulators, deliver a test SMS with
+   `adb emu sms send <from> "<body>"` or between two running emulators.)
 
-Verified end-to-end against the live database (SSE stream + event derivation):
-start → halfway → SOS → arrived → ended all fire in order. `./gradlew
-:app:assembleDebug` in the RakshikaSaathi project builds clean.
+Verified: Firebase path end-to-end against the live database (start → halfway →
+SOS → arrived → ended in order); SMS wire-format parser against every message
+template. `./gradlew :app:assembleDebug` builds clean in both projects.

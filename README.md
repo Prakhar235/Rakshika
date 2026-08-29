@@ -45,21 +45,29 @@ data — no backend, API keys, or permissions are required to demo it.
 
 ## Emergency alert SMS (real, background)
 
+SMS is the **offline fallback**. When the phone has usable data the alert goes
+over Firebase (live tracking); **only when there's no data connection** does
+Rakshika send a background SMS instead — checked per alert via `Connectivity`
+(the Home online/offline toggle also forces this path for demoing).
+
 The **Contacts** tab configures the numbers to alert. Toggle **Background SMS
 alerts** to grant the `SEND_SMS` permission once; after that Rakshika sends a
 plain-text SMS **in the background** — no app opens, no tap — via `SmsManager`
 to every number that has alerts on, when:
 
-- SOS is triggered (Home button or mid-ride) — includes a Google Maps link to
-  the live position for ride SOS,
+- SOS is triggered (Home button or mid-ride) — ride SOS includes an approximate
+  location,
 - a check-in timer runs out,
 - a demo ride starts (destination + route + ETA) and when it ends ("all clear").
 
+Messages use a compact `[RKSH] …` wire format that **RakshikaSaathi parses** to
+pull the approximate lat/lng and show it on its map (see `LIVE_TRACKING.md`).
 Numbers persist across restarts (`ContactsStore`, SharedPreferences). If the
 permission is off, alerts are skipped and the timeline says so. Code:
 `app/src/main/java/com/rakshika/app/alerts/` (`SmsAlerts`, `AlertMessages`,
-`ContactsStore`). WhatsApp is intentionally not wired — third-party apps cannot
-send WhatsApp in the background without the WhatsApp Cloud API (a backend).
+`Connectivity`, `ContactsStore`). WhatsApp is intentionally not wired —
+third-party apps cannot send WhatsApp in the background without the WhatsApp
+Cloud API (a backend).
 
 ## Wiring this up for a real build
 

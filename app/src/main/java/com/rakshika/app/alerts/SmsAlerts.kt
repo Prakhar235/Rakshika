@@ -10,18 +10,24 @@ import androidx.core.content.ContextCompat
 
 /**
  * Sends alert SMS in the background via [SmsManager] — no app is opened, no user
- * tap. Requires the SEND_SMS runtime permission (requested from the Contacts
- * screen). If the permission is missing, [send] is a no-op that reports it back
- * so the caller can log "SMS skipped".
+ * tap. By default it only sends when there is **no usable data connection**
+ * ([Connectivity]); when online, the alert travels over Firebase instead and
+ * this is a no-op. Requires the SEND_SMS runtime permission.
  */
 object SmsAlerts {
 
-    data class Result(val sent: Int, val failed: Int, val permission: Boolean) {
+    data class Result(
+        val sent: Int,
+        val failed: Int,
+        val permission: Boolean,
+        val online: Boolean
+    ) {
         val summary: String
             get() = when {
-                !permission -> "SMS skipped — permission off"
-                failed == 0 -> "SMS sent to $sent contact${if (sent == 1) "" else "s"}"
-                else -> "SMS sent to $sent, failed $failed"
+                online -> "online · sent to live tracking, no SMS"
+                !permission -> "offline · SMS skipped (permission off)"
+                failed == 0 -> "offline · SMS sent to $sent contact${if (sent == 1) "" else "s"}"
+                else -> "offline · SMS sent to $sent, failed $failed"
             }
     }
 
@@ -29,10 +35,22 @@ object SmsAlerts {
         ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) ==
             PackageManager.PERMISSION_GRANTED
 
-    fun send(context: Context, numbers: List<String>, message: String): Result {
-        if (!hasPermission(context)) return Result(0, 0, permission = false)
+    /**
+     * @param onlyWhenOffline when true (default), do nothing if data is available.
+     */
+    fun send(
+        context: Context,
+        numbers: List<String>,
+        message: String,
+        onlyWhenOffline: Boolean = true
+    ): Result {
+        if (onlyWhenOffline && Connectivity.isOnline(context)) {
+            return Result(0, 0, permission = hasPermission(context), online = true)
+        }
+        if (!hasPermission(context)) return Result(0, 0, permission = false, online = false)
+
         val recipients = numbers.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        if (recipients.isEmpty()) return Result(0, 0, permission = true)
+        if (recipients.isEmpty()) return Result(0, 0, permission = true, online = false)
 
         val sms = smsManager(context)
         var sent = 0
@@ -51,8 +69,8 @@ object SmsAlerts {
                 Log.w(TAG, "SMS to $number failed: ${e.message}")
             }
         }
-        Log.i(TAG, "alert SMS -> sent=$sent failed=$failed")
-        return Result(sent, failed, permission = true)
+        Log.i(TAG, "fallback SMS -> sent=$sent failed=$failed")
+        return Result(sent, failed, permission = true, online = false)
     }
 
     @Suppress("DEPRECATION")
