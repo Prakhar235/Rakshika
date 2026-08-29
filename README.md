@@ -43,6 +43,24 @@ data — no backend, API keys, or permissions are required to demo it.
     button from Home works mid-ride. Ends on an "arrived safely" screen with a
     "Plan another ride" reset. All state is in-memory and scoped to the tab.
 
+## Emergency alert SMS (real, background)
+
+The **Contacts** tab configures the numbers to alert. Toggle **Background SMS
+alerts** to grant the `SEND_SMS` permission once; after that Rakshika sends a
+plain-text SMS **in the background** — no app opens, no tap — via `SmsManager`
+to every number that has alerts on, when:
+
+- SOS is triggered (Home button or mid-ride) — includes a Google Maps link to
+  the live position for ride SOS,
+- a check-in timer runs out,
+- a demo ride starts (destination + route + ETA) and when it ends ("all clear").
+
+Numbers persist across restarts (`ContactsStore`, SharedPreferences). If the
+permission is off, alerts are skipped and the timeline says so. Code:
+`app/src/main/java/com/rakshika/app/alerts/` (`SmsAlerts`, `AlertMessages`,
+`ContactsStore`). WhatsApp is intentionally not wired — third-party apps cannot
+send WhatsApp in the background without the WhatsApp Cloud API (a backend).
+
 ## Wiring this up for a real build
 
 Each mock maps to a real integration you've already got experience with:
@@ -51,7 +69,7 @@ Each mock maps to a real integration you've already got experience with:
 |---|---|
 | `RakshikaViewModel` in-memory state | Firestore-backed repository + `WorkManager` for offline sync |
 | Online/offline toggle | Real `ConnectivityManager` callback |
-| SOS trigger | FCM push when online; `SmsManager` fallback when offline |
+| SOS trigger | FCM push when online; background `SmsManager` alert to contacts is already wired (see above) |
 | Mock map canvas | Google Maps Compose or OSMDroid, `FusedLocationProviderClient` |
 | Check-in timer | `AlarmManager` or a foreground service so it survives app kill |
 | Fake call | Trigger via volume-button long-press listener for one-tap access from a locked screen |
@@ -60,8 +78,9 @@ Each mock maps to a real integration you've already got experience with:
 
 ## Notes
 
-- No network calls, permissions, or third-party SDKs are wired in — this is
-  intentionally a self-contained UI/UX demo, not a functional safety app yet.
+- Mostly a self-contained UI/UX demo, with two real integrations layered on:
+  background alert SMS (`SEND_SMS`, see above) and live-location publishing to
+  Firebase Realtime Database (`LIVE_TRACKING.md`). No third-party SDKs.
 - Package name: `com.rakshika.app`. Rename via Android Studio's refactor tool
   if you want a different namespace before publishing.
 # Rakshika

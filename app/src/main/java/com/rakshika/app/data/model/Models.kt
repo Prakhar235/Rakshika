@@ -8,7 +8,9 @@ data class EmergencyContact(
     val id: String,
     val name: String,
     val phone: String,
-    val relation: String
+    val relation: String,
+    /** Include this number when an alert SMS is sent. */
+    val alertsEnabled: Boolean = true
 )
 
 enum class EventType {

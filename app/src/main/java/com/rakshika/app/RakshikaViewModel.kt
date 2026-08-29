@@ -1,7 +1,11 @@
 package com.rakshika.app
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.rakshika.app.alerts.AlertMessages
+import com.rakshika.app.alerts.ContactsStore
+import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.AlertEvent
 import com.rakshika.app.data.model.EmergencyContact
 import com.rakshika.app.data.model.EventType
@@ -16,7 +20,8 @@ import java.util.UUID
 
 data class RakshikaUiState(
     val isOnline: Boolean = true,
-    val contacts: List<EmergencyContact> = DemoSeedData.contacts(),
+    val contacts: List<EmergencyContact> = emptyList(),
+    val smsPermissionGranted: Boolean = false,
     val events: List<AlertEvent> = DemoSeedData.events(),
     val checkInActive: Boolean = false,
     val checkInTotalSeconds: Int = 0,
@@ -25,21 +30,32 @@ data class RakshikaUiState(
     val fakeCallRinging: Boolean = false
 )
 
-class RakshikaViewModel : ViewModel() {
+class RakshikaViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val _uiState = MutableStateFlow(RakshikaUiState())
+    private val contactsStore = ContactsStore(app)
+
+    private val _uiState = MutableStateFlow(
+        RakshikaUiState(
+            contacts = contactsStore.load(),
+            smsPermissionGranted = SmsAlerts.hasPermission(app)
+        )
+    )
     val uiState: StateFlow<RakshikaUiState> = _uiState
 
     private var checkInJob: Job? = null
+
+    /** Called by the Contacts screen after the SEND_SMS permission dialog. */
+    fun refreshSmsPermission() {
+        _uiState.update { it.copy(smsPermissionGranted = SmsAlerts.hasPermission(getApplication())) }
+    }
 
     fun toggleOnlineMode() {
         _uiState.update { it.copy(isOnline = !it.isOnline) }
     }
 
     fun triggerSos(note: String = "") {
-        val reason = if (note.isNotBlank()) note
-        else if (_uiState.value.isOnline) "SOS sent via push notification"
-        else "SOS sent via SMS fallback (offline)"
+        val result = SmsAlerts.send(getApplication(), contactsStore.recipients(), AlertMessages.sosHome())
+        val reason = if (note.isNotBlank()) note else "SOS triggered · ${result.summary}"
 
         addEvent(EventType.SOS_TRIGGERED, reason)
         _uiState.update { it.copy(sosJustTriggered = true) }
@@ -47,7 +63,6 @@ class RakshikaViewModel : ViewModel() {
             delay(2500)
             _uiState.update { it.copy(sosJustTriggered = false) }
         }
-        // A real SOS also cancels any running check-in.
         cancelCheckIn(auto = false, note = "")
     }
 
@@ -73,8 +88,10 @@ class RakshikaViewModel : ViewModel() {
                 _uiState.update { it.copy(checkInSecondsLeft = (it.checkInSecondsLeft - 1).coerceAtLeast(0)) }
             }
             if (_uiState.value.checkInActive) {
-                // Timer ran out without the user cancelling -> treat as missed check-in.
-                addEvent(EventType.CHECK_IN_MISSED, "No check-in received, contacts notified")
+                val result = SmsAlerts.send(
+                    getApplication(), contactsStore.recipients(), AlertMessages.missedCheckIn()
+                )
+                addEvent(EventType.CHECK_IN_MISSED, "No check-in received · ${result.summary}")
                 _uiState.update { it.copy(checkInActive = false) }
             }
         }
@@ -99,11 +116,23 @@ class RakshikaViewModel : ViewModel() {
 
     fun addContact(name: String, phone: String, relation: String) {
         val newContact = EmergencyContact(UUID.randomUUID().toString(), name, phone, relation)
-        _uiState.update { it.copy(contacts = it.contacts + newContact) }
+        updateContacts { it + newContact }
     }
 
     fun removeContact(id: String) {
-        _uiState.update { it.copy(contacts = it.contacts.filterNot { c -> c.id == id }) }
+        updateContacts { list -> list.filterNot { it.id == id } }
+    }
+
+    fun setContactAlerts(id: String, enabled: Boolean) {
+        updateContacts { list -> list.map { if (it.id == id) it.copy(alertsEnabled = enabled) else it } }
+    }
+
+    private fun updateContacts(transform: (List<EmergencyContact>) -> List<EmergencyContact>) {
+        _uiState.update { state ->
+            val next = transform(state.contacts)
+            contactsStore.save(next)
+            state.copy(contacts = next)
+        }
     }
 
     private fun addEvent(type: EventType, note: String) {

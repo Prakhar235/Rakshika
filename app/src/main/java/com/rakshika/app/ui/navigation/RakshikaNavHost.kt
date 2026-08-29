@@ -109,8 +109,11 @@ fun RakshikaNavHost(viewModel: RakshikaViewModel = viewModel()) {
             composable(Dest.Contacts.route) {
                 ContactsScreen(
                     contacts = uiState.contacts,
+                    smsPermissionGranted = uiState.smsPermissionGranted,
+                    onSmsPermissionResult = viewModel::refreshSmsPermission,
                     onAddContact = viewModel::addContact,
-                    onRemoveContact = viewModel::removeContact
+                    onRemoveContact = viewModel::removeContact,
+                    onToggleAlerts = viewModel::setContactAlerts
                 )
             }
             composable(Dest.Demo.route) {

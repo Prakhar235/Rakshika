@@ -1,14 +1,20 @@
 package com.rakshika.app.ride
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.rakshika.app.alerts.AlertMessages
+import com.rakshika.app.alerts.ContactsStore
+import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.rag.RagRouteEngine
 import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.SafetyDatasets
 import com.rakshika.app.ui.mapkit.ROUTE_A
 import com.rakshika.app.ui.mapkit.ROUTE_B
+import com.rakshika.app.ui.mapkit.pointAt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,12 +23,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class RideViewModel : ViewModel() {
+class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(RideState())
     val state: StateFlow<RideState> = _state
 
     private val engine = RagRouteEngine()
     private val live = LiveShareRepository(viewModelScope)
+    private val contactsStore = ContactsStore(app)
     private var rideJob: Job? = null
     private var assessJob: Job? = null
 
@@ -65,6 +72,10 @@ class RideViewModel : ViewModel() {
         if (_state.value.safeSelected) it.safe else it.fast
     }
 
+    /** Real lat/lng of a point [t] (0..1) along [path], via the shared map bounding box. */
+    private fun geoAt(path: List<androidx.compose.ui.geometry.Offset>, t: Float): DoubleArray =
+        LiveShareConfig.toGeo(pointAt(path, 1f, 1f, t))
+
     private fun runAssessment(place: Place, keepStep: Boolean) {
         assessJob?.cancel()
         assessJob = viewModelScope.launch {
@@ -106,6 +117,12 @@ class RideViewModel : ViewModel() {
         val destination = _state.value.destination
         if (destination != null) {
             live.startTrip(ORIGIN, destination, chosen, _state.value.safeSelected, path, chosen.minutes)
+            val d = geoAt(path, 1f)
+            SmsAlerts.send(
+                getApplication(),
+                contactsStore.recipients(),
+                AlertMessages.rideStarted(destination.name, chosen.label, chosen.minutes, d[0], d[1])
+            )
         }
 
         rideJob = viewModelScope.launch {
@@ -126,12 +143,23 @@ class RideViewModel : ViewModel() {
             }
             live.updateLocation(path, 1f, 0)
             live.arrive()
+            _state.value.destination?.let {
+                SmsAlerts.send(getApplication(), contactsStore.recipients(), AlertMessages.arrived(it.name))
+            }
             _state.update { it.copy(step = RideStep.ARRIVED, rideProgress = 1f, etaMinutesLeft = 0) }
         }
     }
 
     fun triggerSos() {
         live.setSos(true)
+        val path = chosenPath()
+        val here = geoAt(path, _state.value.rideProgress)
+        val destination = _state.value.destination?.name ?: "my destination"
+        SmsAlerts.send(
+            getApplication(),
+            contactsStore.recipients(),
+            AlertMessages.sosRide(destination, here[0], here[1])
+        )
         _state.update { it.copy(sosActive = true, contactRohan = ContactStatus.RESPONDING) }
     }
 
