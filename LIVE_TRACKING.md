@@ -5,12 +5,13 @@ live position to **Firebase Realtime Database** over its REST API, so a second
 app can follow along in realtime. No Firebase SDK or `google-services.json` is
 needed — just a database URL.
 
-Two readers ship with the repo:
+Two readers:
 
-- **`tracker.html`** — a one-file web page, open it in any browser.
-- **`:saathi`** — **RakshikaSaathi**, a full companion Android app (separate
-  installable APK) that shows the live map, a ride-updates log, and fires
-  **system notifications** for ride-started / SOS / arrived. See
+- **`tracker.html`** (in this repo) — a one-file web page, open it in any browser.
+- **RakshikaSaathi** — a full companion Android app in its **own project**,
+  the sibling folder `../RakshikaSaathi/`. Shows the live map, a ride-updates
+  log, and fires **system notifications** for ride-started / SOS / arrived.
+  See its own `README.md`; summary in
   [the RakshikaSaathi section](#rakshikasaathi-companion-app) below.
 
 ## 1. Create the database (one time, ~2 min)
@@ -97,8 +98,10 @@ still plays locally and the "Sharing live" chip turns grey / red.
 
 ## RakshikaSaathi companion app
 
-`:saathi` is a second app module (`com.rakshika.saathi`, minSdk 26) — the
-guardian's phone. It **only reads** the trip; it never writes.
+**RakshikaSaathi** is its own standalone Android Studio project in the sibling
+folder `../RakshikaSaathi/` (`com.rakshika.saathi`, minSdk 26) — the guardian's
+phone. Open that folder directly in Android Studio. It **only reads** the trip;
+it never writes.
 
 ### How it tracks in realtime
 
@@ -132,16 +135,16 @@ backgrounded, and reconnects automatically on drops.
 ### Run it
 
 1. Same `DATABASE_URL` is already set in
-   `saathi/src/main/java/com/rakshika/saathi/data/Config.kt` (keep it in sync
-   with `LiveShareConfig.kt`). `COMPANION_NAME` there is the name shown in the
-   UI/alerts ("Priya" by default).
-2. In Android Studio, pick the **saathi** run configuration (or
-   `./gradlew :saathi:installDebug`) and launch it — ideally on a *second*
-   device/emulator. Grant the notifications permission when asked.
+   `../RakshikaSaathi/app/src/main/java/com/rakshika/saathi/data/Config.kt`
+   (keep it in sync with `LiveShareConfig.kt`). `COMPANION_NAME` there is the
+   name shown in the UI/alerts ("Priya" by default).
+2. Open `../RakshikaSaathi/` as its own project in Android Studio and Run it
+   (or `cd ../RakshikaSaathi && ./gradlew :app:installDebug`) — ideally on a
+   *second* device/emulator. Grant the notifications permission when asked.
 3. Start a ride in the Rakshika app. RakshikaSaathi lights up within ~1 s:
    map moves, log fills, notifications fire. Holding SOS mid-ride raises the
    high-priority alert; arrival closes it out.
 
-Verified end-to-end against the live database (SSE stream + event derivation)
-with `scratchpad/sim.py`: start → halfway → SOS → arrived → ended all fire in
-order. The Kotlin `:saathi:assembleDebug` builds clean.
+Verified end-to-end against the live database (SSE stream + event derivation):
+start → halfway → SOS → arrived → ended all fire in order. `./gradlew
+:app:assembleDebug` in the RakshikaSaathi project builds clean.
