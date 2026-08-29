@@ -60,8 +60,10 @@ to every number that has alerts on, when:
 - a check-in timer runs out,
 - a demo ride starts (destination + route + ETA) and when it ends ("all clear").
 
-Messages use a compact `[RKSH] …` wire format that **RakshikaSaathi parses** to
-pull the approximate lat/lng and show it on its map (see `LIVE_TRACKING.md`).
+Each message carries a **`rakshika://track?k=…&lat=…&lng=…&d=…` deep link** (no
+Google Maps). Tapping it opens **RakshikaSaathi** straight onto that location;
+RakshikaSaathi also parses the same link out of the received SMS automatically.
+See `LIVE_TRACKING.md`.
 Numbers persist across restarts (`ContactsStore`, SharedPreferences). If the
 permission is off, alerts are skipped and the timeline says so. Code:
 `app/src/main/java/com/rakshika/app/alerts/` (`SmsAlerts`, `AlertMessages`,

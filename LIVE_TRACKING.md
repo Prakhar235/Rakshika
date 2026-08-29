@@ -135,23 +135,32 @@ backgrounded, and reconnects automatically on drops.
 ### SMS fallback — when Rakshika's phone has no data
 
 If the Rakshika phone has no usable data connection, it can't reach Firebase, so
-it sends the alert as a background **SMS** in the shared `[RKSH] …` wire format
-(see Rakshika's `alerts/AlertMessages.kt`). RakshikaSaathi picks that up:
+it sends the alert as a background **SMS** (see Rakshika's
+`alerts/AlertMessages.kt`). Each message is:
 
-- `sms/SmsReceiver` (manifest `SMS_RECEIVED` broadcast receiver, `RECEIVE_SMS`
-  permission) fires on every inbound text.
-- `sms/SmsWire.parse` recognises the `[RKSH]` marker and pulls the **type**
-  (SOS / RIDE / ARRIVED / CHECKIN), the **approximate lat/lng** (4-decimal, from
-  the last fix the phone had), and the destination.
-- The alert is persisted (`SmsAlertStore`), pushed into `TripRepository.smsFix`,
-  logged, and raised as a notification (`SmsNotifier`, high-importance channel).
-- The tracker screen then shows an **"Alert received by SMS"** card with the
-  message text and the approximate point on a coarse-accuracy map (a halo, not a
-  precise dot — it's roughly street-block level).
+```
+[RKSH] <human text> rakshika://track?k=<TYPE>&lat=<lat>&lng=<lng>&d=<dest>
+```
 
-This path needs no data on the Saathi phone either — only cell signal for SMS.
-Verified: the parser extracts type + coords + destination for every
-`AlertMessages` template.
+The `rakshika://track` **deep link is RakshikaSaathi's** — no Google Maps link.
+RakshikaSaathi handles it two ways:
+
+- **Automatically:** `sms/SmsReceiver` (manifest `SMS_RECEIVED` receiver,
+  `RECEIVE_SMS` permission) fires on every inbound text; `sms/SmsWire.parse`
+  pulls the deep link out of the body and reads **type** (SOS / RIDE / ARRIVED /
+  CHECKIN), **approximate lat/lng** (4-decimal, last fix the phone had), and
+  destination. Persisted (`SmsAlertStore`), pushed to `TripRepository.smsFix`,
+  logged, and raised as a notification (`SmsNotifier`).
+- **On tap:** the same link, opened from the Messages app, launches
+  `MainActivity` (`android.intent.action.VIEW`, `scheme=rakshika host=track`) →
+  `SmsWire.fromLink` → straight onto the location. (De-duped if it also arrived
+  automatically.)
+
+Either way the tracker shows an **"Alert from <name>"** card with the message
+and the approximate point as a coarse-accuracy halo (roughly street-block
+level), source marked *by SMS* or *from the link*. Needs no data on the Saathi
+phone — only cell signal. Verified: parser extracts type + coords + destination
+for every `AlertMessages` template.
 
 ### Run it
 
