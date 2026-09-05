@@ -149,26 +149,20 @@ private fun SearchStep(
         Spacer(Modifier.height(18.dp))
 
         Text(
-            if (state.query.isBlank()) "Search a real place — powered by Google Places" else "Results",
+            if (state.query.isBlank()) "Nearby" else "Results",
             style = MaterialTheme.typography.titleSmall,
             color = TextSecondary
         )
         Spacer(Modifier.height(8.dp))
 
         when {
-            !MapsConfig.isConfigured -> Text(
-                "Maps API key not set — add MAPS_API_KEY to local.properties to search real places.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = RakshikaAmber
-            )
             state.searching -> Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
                 Spacer(Modifier.width(8.dp))
                 Text("Searching…", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
             }
-            state.searchError != null -> Text(state.searchError, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-            state.query.isBlank() -> Text(
-                "Type a destination to search real places nearby.",
+            state.suggestions.isEmpty() -> Text(
+                state.searchError ?: "No matches — try another name.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary
             )

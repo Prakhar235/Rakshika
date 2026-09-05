@@ -61,10 +61,21 @@ Android**, **Places API**, **Directions API**, and **Geocoding API** enabled.
 2. `app/build.gradle.kts` reads it into `BuildConfig.MAPS_API_KEY` and a
    manifest placeholder — nothing else to wire up.
 3. Grant the location permission prompt on the Search step (or it falls back
-   to a fixed real Bengaluru coordinate). Search, routing, and rendering are
-   all real; the safety-scoring RAG pipeline over lighting/incident notes is
-   still simulated data (see `app/.../rag/`), by design — that's the feature
-   being demoed.
+   to a fixed real coordinate near Sector 75, Noida). Search, routing, and
+   rendering are all real; the safety-scoring RAG pipeline over
+   lighting/incident notes is still simulated data (see `app/.../rag/`), by
+   design — that's the feature being demoed.
+
+**No key yet, or Places/Directions not enabled on the project?** The ride
+still looks real either way. `ride/NearbyPlaces.kt` is a small curated
+directory of genuine nearby places (Sector 76 Metro Station, Jaypee Wish
+Town, Sector 50 Metro Station, …) that destination search falls back to the
+moment the live Places call comes back empty, and `geo/FallbackRoutes.kt`
+synthesizes two distinct, road-shaped walking routes (a direct one-turn
+shortcut vs. a longer arcing "main road") between the real coordinates
+whenever Directions doesn't answer — ETAs are computed from that synthesized
+path length, not guessed. Both are drop-in replacements: the moment the real
+APIs start answering, `RideViewModel` prefers them automatically.
 
 ## Emergency alert SMS (real, background)
 

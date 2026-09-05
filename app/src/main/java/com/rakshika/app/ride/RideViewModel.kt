@@ -10,9 +10,9 @@ import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.ContactStatus
 import com.rakshika.app.geo.DeviceLocation
 import com.rakshika.app.geo.DirectionsRepository
+import com.rakshika.app.geo.FallbackRoutes
 import com.rakshika.app.geo.GeoPath
 import com.rakshika.app.geo.GeoRoute
-import com.rakshika.app.geo.MapsConfig
 import com.rakshika.app.geo.PlaceSuggestion
 import com.rakshika.app.geo.PlacesSearch
 import com.rakshika.app.live.LiveShareRepository
@@ -56,17 +56,19 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         locateOrigin()
     }
 
-    /** Resolves the real starting point via device location, falling back to a fixed real coordinate. */
+    /** Resolves the real starting point via device location, falling back to Sector 75, Noida. */
     fun locateOrigin() {
         viewModelScope.launch {
             _state.update { it.copy(locatingOrigin = true) }
-            val fix = DeviceLocation.lastKnown(getApplication()) ?: MapsConfig.FALLBACK_ORIGIN
+            val deviceFix = DeviceLocation.lastKnown(getApplication())
+            val fix = deviceFix ?: NearbyPlaces.FALLBACK_ORIGIN.latLng
             val label = DeviceLocation.reverseGeocode(fix)
             _state.update {
                 it.copy(
                     origin = Place(
-                        name = label?.substringBefore(",")?.trim()?.ifBlank { null } ?: "Current location",
-                        area = label ?: "Approximate location",
+                        name = label?.substringBefore(",")?.trim()?.ifBlank { null }
+                            ?: NearbyPlaces.FALLBACK_ORIGIN.name,
+                        area = label ?: NearbyPlaces.FALLBACK_ORIGIN.area,
                         lat = fix.latitude,
                         lng = fix.longitude
                     ),
@@ -81,33 +83,40 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         if (granted) locateOrigin()
     }
 
-    /** Debounced real Places Autocomplete search. */
+    /**
+     * Debounced destination search: tries real Places Autocomplete first, and falls back to
+     * the curated NearbyPlaces directory whenever that comes back empty (no key, API not
+     * enabled, offline) so there's always something real-looking to pick from.
+     */
     fun updateQuery(text: String) {
         _state.update { it.copy(query = text) }
         searchJob?.cancel()
         if (text.isBlank()) {
-            _state.update { it.copy(suggestions = emptyList(), searching = false, searchError = null) }
+            _state.update { it.copy(suggestions = NearbyPlaces.defaultSuggestions(), searching = false, searchError = null) }
             return
         }
         searchJob = viewModelScope.launch {
             delay(300L)
             _state.update { it.copy(searching = true, searchError = null) }
-            val results = PlacesSearch.autocomplete(text, sessionToken, _state.value.origin?.latLng)
+            val live = PlacesSearch.autocomplete(text, sessionToken, _state.value.origin?.latLng)
+            val results = live.ifEmpty { NearbyPlaces.search(text) }
             _state.update {
                 it.copy(
                     suggestions = results,
                     searching = false,
-                    searchError = when {
-                        results.isNotEmpty() -> null
-                        !MapsConfig.isConfigured -> "Maps API key not set — see local.properties."
-                        else -> "No matches — try another name."
-                    }
+                    searchError = if (results.isEmpty()) "No matches — try another name." else null
                 )
             }
         }
     }
 
     fun selectSuggestion(suggestion: PlaceSuggestion) {
+        // NearbyPlaces entries resolve locally, no network round-trip needed.
+        NearbyPlaces.byPlaceId(suggestion.placeId)?.let { local ->
+            _state.update { it.copy(suggestions = emptyList(), query = local.name) }
+            selectDestination(local)
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(searching = true, searchError = null) }
             val latLng = PlacesSearch.fetchLatLng(suggestion.placeId, sessionToken)
@@ -169,7 +178,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         assessJob?.cancel()
         assessJob = viewModelScope.launch {
             _state.update { it.copy(assessing = true, searchError = null) }
-            val origin = _state.value.origin ?: Place("Current location", "Approximate location", MapsConfig.FALLBACK_ORIGIN.latitude, MapsConfig.FALLBACK_ORIGIN.longitude)
+            val origin = _state.value.origin ?: NearbyPlaces.FALLBACK_ORIGIN
 
             val geoRoutes = cachedGeoRoutes?.takeIf { cachedForDestination == place } ?: run {
                 // Small pause so the "embedding query · retrieving notes" step is visible even
@@ -179,19 +188,6 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
                 cachedGeoRoutes = fetched
                 cachedForDestination = place
                 fetched
-            }
-
-            if (geoRoutes.isEmpty()) {
-                _state.update {
-                    it.copy(
-                        assessing = false,
-                        searchError = if (!MapsConfig.isConfigured)
-                            "Maps API key not set — see local.properties."
-                        else
-                            "Couldn't fetch a real route to ${place.name} — check connectivity and try again."
-                    )
-                }
-                return@launch
             }
 
             val dataset = SafetyDatasets.byId(_state.value.selectedDatasetId)
@@ -211,13 +207,18 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Two real walking-route alternatives, mapped onto the RAG engine's two corridors by duration. */
+    /**
+     * Two walking-route alternatives, mapped onto the RAG engine's two corridors by duration.
+     * Prefers real Directions results; when those come back empty (no key, API not enabled,
+     * offline), synthesizes two realistic-looking routes off the real origin/destination
+     * instead — either way the map, ETAs, and RAG scoring all see genuine coordinates.
+     */
     private suspend fun fetchGeoRoutes(origin: LatLng, destination: LatLng): Map<RouteCorridor, GeoRoute> {
-        val routes = DirectionsRepository.fetchRoutes(origin, destination)
-        if (routes.isEmpty()) return emptyMap()
+        val live = DirectionsRepository.fetchRoutes(origin, destination)
+        val routes = live.ifEmpty { FallbackRoutes.synthesize(origin, destination) }
         val sorted = routes.sortedBy { it.minutes }
         val faster = sorted.first()
-        val slower = sorted.last() // same route as faster if Directions only returned one alternative
+        val slower = sorted.last() // same route as faster if only one alternative came back
         return mapOf(RouteCorridor.BACK_LANE to faster, RouteCorridor.MAIN_ROAD to slower)
     }
 

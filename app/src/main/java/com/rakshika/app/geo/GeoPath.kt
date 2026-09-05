@@ -41,8 +41,8 @@ object GeoPath {
         return path.last()
     }
 
-    /** Rough planar distance in meters — only used to compare/interpolate, not for display. */
-    private fun distance(a: LatLng, b: LatLng): Float {
+    /** Rough planar distance in meters — accurate enough to compare/interpolate/estimate ETAs. */
+    internal fun distance(a: LatLng, b: LatLng): Float {
         val metersPerDegLat = 111_320.0
         val metersPerDegLng = 111_320.0 * cos(Math.toRadians((a.latitude + b.latitude) / 2))
         val dy = (b.latitude - a.latitude) * metersPerDegLat

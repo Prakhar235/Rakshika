@@ -21,6 +21,7 @@ object MapsConfig {
     val isConfigured: Boolean
         get() = API_KEY.isNotBlank() && API_KEY != "PASTE_YOUR_KEY_HERE"
 
-    /** Fallback origin (central Bengaluru, MG Road) if device location is denied/unavailable. */
-    val FALLBACK_ORIGIN = LatLng(12.9720, 77.5966)
+    /** Fallback origin (Sector 75, Noida) if device location is denied/unavailable — see
+     *  ride/NearbyPlaces.kt for the richer Place wrapping this and its nearby destinations. */
+    val FALLBACK_ORIGIN = LatLng(28.5535, 77.3548)
 }
