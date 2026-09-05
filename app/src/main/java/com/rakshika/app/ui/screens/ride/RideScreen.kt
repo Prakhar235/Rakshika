@@ -1,5 +1,9 @@
 package com.rakshika.app.ui.screens.ride
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,28 +39,38 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.Dash
+import com.google.android.gms.maps.model.Gap
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.LatLngBounds
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Marker
+import com.google.maps.android.compose.MarkerComposable
+import com.google.maps.android.compose.MarkerState
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.geo.GeoPath
+import com.rakshika.app.geo.MapsConfig
+import com.rakshika.app.geo.PlaceSuggestion
 import com.rakshika.app.live.LiveShareStatus
 import com.rakshika.app.rag.RagResult
-import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.RouteEvidence
 import com.rakshika.app.rag.SafetyDatasets
-import com.rakshika.app.ride.ORIGIN
 import com.rakshika.app.ride.Place
 import com.rakshika.app.ride.RideState
 import com.rakshika.app.ride.RideStep
 import com.rakshika.app.ride.RideViewModel
 import com.rakshika.app.ride.RouteOption
-import com.rakshika.app.ui.mapkit.ROUTE_A
-import com.rakshika.app.ui.mapkit.ROUTE_B
-import com.rakshika.app.ui.mapkit.drawMarker
-import com.rakshika.app.ui.mapkit.drawRoadsAndBlocks
-import com.rakshika.app.ui.mapkit.drawRoute
-import com.rakshika.app.ui.mapkit.drawTravelDot
-import com.rakshika.app.ui.mapkit.pointAt
 import com.rakshika.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -68,7 +82,13 @@ fun RideScreen(viewModel: RideViewModel = viewModel()) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         when (state.step) {
-            RideStep.SEARCH -> SearchStep(state, viewModel::updateQuery, viewModel::selectDestination, viewModel::selectDataset)
+            RideStep.SEARCH -> SearchStep(
+                state,
+                viewModel::updateQuery,
+                viewModel::selectSuggestion,
+                viewModel::selectDataset,
+                viewModel::onLocationPermissionResult
+            )
             RideStep.ROUTES -> RoutesStep(state, viewModel::selectRoute, viewModel::backToSearch, viewModel::startRide)
             RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos)
             RideStep.ARRIVED -> ArrivedStep(state, viewModel::newRide)
@@ -82,26 +102,28 @@ fun RideScreen(viewModel: RideViewModel = viewModel()) {
 private fun SearchStep(
     state: RideState,
     onQuery: (String) -> Unit,
-    onSelect: (Place) -> Unit,
-    onSelectDataset: (String) -> Unit
+    onSelectSuggestion: (PlaceSuggestion) -> Unit,
+    onSelectDataset: (String) -> Unit,
+    onLocationPermissionResult: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> onLocationPermissionResult(granted) }
+
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        onLocationPermissionResult(granted)
+    }
+
     Column(Modifier.fillMaxSize().padding(20.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(SurfaceCard)
-                .border(0.5.dp, BorderHairline, RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Filled.MyLocation, contentDescription = null, tint = Color(0xFF378ADD), modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Text("Current location", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-                Text("${ORIGIN.name} · ${ORIGIN.area}", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
+        CurrentLocationCard(
+            origin = state.origin,
+            locating = state.locatingOrigin,
+            permissionGranted = state.locationPermissionGranted,
+            onEnableLocation = { permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
+        )
 
         Spacer(Modifier.height(12.dp))
 
@@ -127,18 +149,32 @@ private fun SearchStep(
         Spacer(Modifier.height(18.dp))
 
         Text(
-            if (state.query.isBlank()) "Nearby" else "Results",
+            if (state.query.isBlank()) "Search a real place — powered by Google Places" else "Results",
             style = MaterialTheme.typography.titleSmall,
             color = TextSecondary
         )
         Spacer(Modifier.height(8.dp))
 
-        if (state.suggestions.isEmpty()) {
-            Text("No matches — try another name.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.suggestions) { place ->
-                    PlaceRow(place) { onSelect(place) }
+        when {
+            !MapsConfig.isConfigured -> Text(
+                "Maps API key not set — add MAPS_API_KEY to local.properties to search real places.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = RakshikaAmber
+            )
+            state.searching -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
+                Spacer(Modifier.width(8.dp))
+                Text("Searching…", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            }
+            state.searchError != null -> Text(state.searchError, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            state.query.isBlank() -> Text(
+                "Type a destination to search real places nearby.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.suggestions, key = { it.placeId }) { suggestion ->
+                    SuggestionRow(suggestion) { onSelectSuggestion(suggestion) }
                 }
             }
         }
@@ -146,7 +182,53 @@ private fun SearchStep(
 }
 
 @Composable
-private fun PlaceRow(place: Place, onClick: () -> Unit) {
+private fun CurrentLocationCard(
+    origin: Place?,
+    locating: Boolean,
+    permissionGranted: Boolean,
+    onEnableLocation: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceCard)
+            .border(0.5.dp, BorderHairline, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.MyLocation, contentDescription = null, tint = Color(0xFF378ADD), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Current location", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text(
+                    when {
+                        locating -> "Locating…"
+                        origin != null -> "${origin.name} · ${origin.area}"
+                        else -> "Unavailable"
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            if (locating) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
+            }
+        }
+        if (!permissionGranted) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Using an approximate location. Grant precise location for a real starting point.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary
+            )
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(onClick = onEnableLocation) { Text("Use my location") }
+        }
+    }
+}
+
+@Composable
+private fun SuggestionRow(suggestion: PlaceSuggestion, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -160,8 +242,10 @@ private fun PlaceRow(place: Place, onClick: () -> Unit) {
         Icon(Icons.Filled.LocationOn, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Column {
-            Text(place.name, style = MaterialTheme.typography.bodyMedium)
-            Text(place.area, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            Text(suggestion.primaryText, style = MaterialTheme.typography.bodyMedium)
+            if (suggestion.secondaryText.isNotBlank()) {
+                Text(suggestion.secondaryText, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
         }
     }
 }
@@ -228,7 +312,6 @@ private fun RoutesStep(
     val destination = state.destination ?: return
     val routes = state.routes ?: return
     val chosen = if (state.safeSelected) routes.safe else routes.fast
-    val chosenIsMain = chosen.corridor != RouteCorridor.BACK_LANE
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Row(
@@ -248,7 +331,7 @@ private fun RoutesStep(
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("${ORIGIN.name} → ${destination.name}", style = MaterialTheme.typography.titleMedium)
+                Text("${state.origin?.name ?: "Current location"} → ${destination.name}", style = MaterialTheme.typography.titleMedium)
                 Text(destination.area, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
             if (state.assessing) {
@@ -264,28 +347,9 @@ private fun RoutesStep(
                 .fillMaxWidth()
                 .height(220.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFFF1EFE8))
                 .border(0.5.dp, BorderHairline, RoundedCornerShape(20.dp))
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawRect(Color(0xFFF1EFE8))
-                drawRoadsAndBlocks()
-                drawMarker(ROUTE_B.first(), Color(0xFF378ADD), ring = true)
-                // ROUTE_B is drawn along the main road, ROUTE_A along the back lane.
-                drawRoute(
-                    ROUTE_A,
-                    if (chosenIsMain) Color(0xFFC98A2E) else Color(0xFF3B8F5C),
-                    width = if (!chosenIsMain) 6f else 3.5f,
-                    dashed = chosenIsMain
-                )
-                drawRoute(
-                    ROUTE_B,
-                    if (chosenIsMain) Color(0xFF3B8F5C) else Color(0xFFC98A2E),
-                    width = if (chosenIsMain) 6f else 3.5f,
-                    dashed = !chosenIsMain
-                )
-                drawMarker(ROUTE_B.last(), Color(0xFFD8365E))
-            }
+            RouteMap(safePath = routes.safe.path, fastPath = routes.fast.path, destinationName = destination.name)
         }
 
         Spacer(Modifier.height(14.dp))
@@ -321,6 +385,44 @@ private fun RoutesStep(
         }
 
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+/** Real Google Map showing both real Directions routes — safe (green, solid) and fast (amber, dashed). */
+@Composable
+private fun RouteMap(safePath: List<LatLng>, fastPath: List<LatLng>, destinationName: String) {
+    val start = safePath.firstOrNull() ?: fastPath.firstOrNull() ?: MapsConfig.FALLBACK_ORIGIN
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(start, 15f)
+    }
+    var mapLoaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(mapLoaded, safePath, fastPath) {
+        if (!mapLoaded) return@LaunchedEffect
+        val points = safePath + fastPath
+        if (points.size < 2) return@LaunchedEffect
+        val bounds = LatLngBounds.Builder().apply { points.forEach { include(it) } }.build()
+        runCatching { cameraPositionState.animate(CameraUpdateFactory.newLatLngBounds(bounds, 90)) }
+    }
+
+    GoogleMap(
+        modifier = Modifier.fillMaxSize(),
+        cameraPositionState = cameraPositionState,
+        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false),
+        onMapLoaded = { mapLoaded = true }
+    ) {
+        if (fastPath.isNotEmpty()) {
+            Polyline(points = fastPath, color = RakshikaAmber, width = 12f, pattern = listOf(Dash(28f), Gap(18f)))
+        }
+        if (safePath.isNotEmpty()) {
+            Polyline(points = safePath, color = RakshikaGreen, width = 16f)
+        }
+        safePath.firstOrNull()?.let {
+            Marker(state = MarkerState(it), title = "Current location", icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+        }
+        safePath.lastOrNull()?.let {
+            Marker(state = MarkerState(it), title = destinationName, icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+        }
     }
 }
 
@@ -455,7 +557,7 @@ private fun RagFooter(rag: RagResult) {
         Text(rag.recommendationText, style = MaterialTheme.typography.labelSmall, color = TextPrimary)
         Text(
             "On-device RAG · ${rag.datasetName} · indexed ${rag.indexedDocs} notes · " +
-                "retrieved ${rag.retrievedDocs} · dim ${rag.embeddingDim} · top-k ${rag.topK}",
+                "retrieved ${rag.retrievedDocs} · dim ${rag.embeddingDim} · top-k ${rag.topK} · real routing via Directions",
             style = MaterialTheme.typography.labelSmall,
             color = TextSecondary
         )
@@ -467,20 +569,42 @@ private fun RagFooter(rag: RagResult) {
 @Composable
 private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () -> Unit) {
     val destination = state.destination ?: return
+    val chosen = if (state.safeSelected) state.routes?.safe else state.routes?.fast
+    val path = chosen?.path.orEmpty()
+    val color = if (state.safeSelected) RakshikaGreen else RakshikaAmber
+
+    val start = path.firstOrNull() ?: MapsConfig.FALLBACK_ORIGIN
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(start, 15f)
+    }
+    var mapLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(mapLoaded, path) {
+        if (!mapLoaded || path.size < 2) return@LaunchedEffect
+        val bounds = LatLngBounds.Builder().apply { path.forEach { include(it) } }.build()
+        runCatching { cameraPositionState.animate(CameraUpdateFactory.newLatLngBounds(bounds, 90)) }
+    }
 
     Box(Modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(Color(0xFFF1EFE8))
-            drawRoadsAndBlocks()
-            val chosen = if (state.safeSelected) state.routes?.safe else state.routes?.fast
-            val onMainRoad = chosen?.corridor != RouteCorridor.BACK_LANE
-            val path = if (onMainRoad) ROUTE_B else ROUTE_A
-            val color = if (state.safeSelected) Color(0xFF3B8F5C) else Color(0xFFC98A2E)
-            drawMarker(path.first(), Color(0xFF378ADD), ring = true)
-            drawRoute(path, color, width = 5.5f, dashed = false)
-            drawMarker(path.last(), Color(0xFFD8365E))
-            val p = pointAt(path, size.width, size.height, state.rideProgress)
-            drawTravelDot(p, color)
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraPositionState,
+            uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false),
+            onMapLoaded = { mapLoaded = true }
+        ) {
+            if (path.isNotEmpty()) {
+                Polyline(points = path, color = color, width = 14f)
+                Marker(
+                    state = MarkerState(path.first()),
+                    title = "Start",
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)
+                )
+                Marker(
+                    state = MarkerState(path.last()),
+                    title = destination.name,
+                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)
+                )
+                TravelDotMarker(position = GeoPath.pointAt(path, state.rideProgress), color = color)
+            }
         }
 
         Row(
@@ -547,6 +671,22 @@ private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () 
             onTriggered = onSos,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)
         )
+    }
+}
+
+/** A small colored circle with a white ring at [position] — the moving "you are here" dot. */
+@Composable
+private fun TravelDotMarker(position: LatLng, color: Color) {
+    MarkerComposable(state = MarkerState(position)) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(modifier = Modifier.size(16.dp).clip(CircleShape).background(color))
+        }
     }
 }
 

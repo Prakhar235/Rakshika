@@ -3,18 +3,22 @@ package com.rakshika.app.ride
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.maps.model.LatLng
 import com.rakshika.app.alerts.AlertMessages
 import com.rakshika.app.alerts.ContactsStore
 import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.ContactStatus
-import com.rakshika.app.live.LiveShareConfig
+import com.rakshika.app.geo.DeviceLocation
+import com.rakshika.app.geo.DirectionsRepository
+import com.rakshika.app.geo.GeoPath
+import com.rakshika.app.geo.GeoRoute
+import com.rakshika.app.geo.MapsConfig
+import com.rakshika.app.geo.PlaceSuggestion
+import com.rakshika.app.geo.PlacesSearch
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.rag.RagRouteEngine
 import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.SafetyDatasets
-import com.rakshika.app.ui.mapkit.ROUTE_A
-import com.rakshika.app.ui.mapkit.ROUTE_B
-import com.rakshika.app.ui.mapkit.pointAt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(RideState())
@@ -32,16 +37,93 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val contactsStore = ContactsStore(app)
     private var rideJob: Job? = null
     private var assessJob: Job? = null
+    private var searchJob: Job? = null
+
+    // Places Autocomplete billing is per session, not per keystroke — one token per search,
+    // refreshed once a place is actually picked.
+    private var sessionToken = UUID.randomUUID().toString()
+
+    // The real routes fetched for the current destination, cached so switching the safety
+    // dataset (selectDataset) re-scores instantly without re-calling Directions.
+    private var cachedGeoRoutes: Map<RouteCorridor, GeoRoute>? = null
+    private var cachedForDestination: Place? = null
 
     /** Firebase publish state + path, for the "Sharing live" chip on the ride screen. */
     val liveStatus = live.status
     val liveTripUrl = live.tripUrl
 
-    fun updateQuery(text: String) {
-        _state.update { it.copy(query = text) }
+    init {
+        locateOrigin()
     }
 
-    /** Pick which safety dataset the on-device RAG retrieves from; re-runs live if a route is up. */
+    /** Resolves the real starting point via device location, falling back to a fixed real coordinate. */
+    fun locateOrigin() {
+        viewModelScope.launch {
+            _state.update { it.copy(locatingOrigin = true) }
+            val fix = DeviceLocation.lastKnown(getApplication()) ?: MapsConfig.FALLBACK_ORIGIN
+            val label = DeviceLocation.reverseGeocode(fix)
+            _state.update {
+                it.copy(
+                    origin = Place(
+                        name = label?.substringBefore(",")?.trim()?.ifBlank { null } ?: "Current location",
+                        area = label ?: "Approximate location",
+                        lat = fix.latitude,
+                        lng = fix.longitude
+                    ),
+                    locatingOrigin = false
+                )
+            }
+        }
+    }
+
+    fun onLocationPermissionResult(granted: Boolean) {
+        _state.update { it.copy(locationPermissionGranted = granted) }
+        if (granted) locateOrigin()
+    }
+
+    /** Debounced real Places Autocomplete search. */
+    fun updateQuery(text: String) {
+        _state.update { it.copy(query = text) }
+        searchJob?.cancel()
+        if (text.isBlank()) {
+            _state.update { it.copy(suggestions = emptyList(), searching = false, searchError = null) }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(300L)
+            _state.update { it.copy(searching = true, searchError = null) }
+            val results = PlacesSearch.autocomplete(text, sessionToken, _state.value.origin?.latLng)
+            _state.update {
+                it.copy(
+                    suggestions = results,
+                    searching = false,
+                    searchError = when {
+                        results.isNotEmpty() -> null
+                        !MapsConfig.isConfigured -> "Maps API key not set — see local.properties."
+                        else -> "No matches — try another name."
+                    }
+                )
+            }
+        }
+    }
+
+    fun selectSuggestion(suggestion: PlaceSuggestion) {
+        viewModelScope.launch {
+            _state.update { it.copy(searching = true, searchError = null) }
+            val latLng = PlacesSearch.fetchLatLng(suggestion.placeId, sessionToken)
+            sessionToken = UUID.randomUUID().toString()
+            if (latLng == null) {
+                _state.update { it.copy(searching = false, searchError = "Couldn't look up that place — try again.") }
+                return@launch
+            }
+            _state.update { it.copy(searching = false, suggestions = emptyList(), query = suggestion.primaryText) }
+            selectDestination(
+                Place(name = suggestion.primaryText, area = suggestion.secondaryText, lat = latLng.latitude, lng = latLng.longitude)
+            )
+        }
+    }
+
+    /** Pick which safety dataset the on-device RAG retrieves from; re-scores the cached real routes. */
     fun selectDataset(id: String) {
         if (_state.value.selectedDatasetId == id) return
         _state.update { it.copy(selectedDatasetId = id) }
@@ -49,6 +131,8 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectDestination(place: Place) {
+        cachedGeoRoutes = null
+        cachedForDestination = null
         _state.update { it.copy(destination = place) }
         runAssessment(place, keepStep = false)
     }
@@ -61,45 +145,87 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         rideJob?.cancel()
         assessJob?.cancel()
         live.endTrip()
-        _state.update { RideState(query = it.query, selectedDatasetId = it.selectedDatasetId) }
+        _state.update {
+            RideState(
+                query = it.query,
+                selectedDatasetId = it.selectedDatasetId,
+                origin = it.origin,
+                locationPermissionGranted = it.locationPermissionGranted
+            )
+        }
     }
 
-    /** The mock-map polyline the chosen corridor walks — ROUTE_B is the main road, ROUTE_A the back lane. */
-    private fun chosenPath() =
-        if (currentChoice()?.corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
+    /** The real Directions polyline the chosen route walks. */
+    private fun chosenPath(): List<LatLng> = currentChoice()?.path.orEmpty()
 
     private fun currentChoice() = _state.value.routes?.let {
         if (_state.value.safeSelected) it.safe else it.fast
     }
 
-    /** Real lat/lng of a point [t] (0..1) along [path], via the shared map bounding box. */
-    private fun geoAt(path: List<androidx.compose.ui.geometry.Offset>, t: Float): DoubleArray =
-        LiveShareConfig.toGeo(pointAt(path, 1f, 1f, t))
+    private fun geoAt(path: List<LatLng>, t: Float): LatLng = GeoPath.pointAt(path, t)
 
+    /** Fetches (or reuses) real routes for [place], then re-runs the on-device RAG scoring over them. */
     private fun runAssessment(place: Place, keepStep: Boolean) {
         assessJob?.cancel()
         assessJob = viewModelScope.launch {
-            _state.update { it.copy(assessing = true) }
-            // Small pause so the "embedding query · retrieving notes" step is visible.
-            delay(if (keepStep) 280L else 460L)
+            _state.update { it.copy(assessing = true, searchError = null) }
+            val origin = _state.value.origin ?: Place("Current location", "Approximate location", MapsConfig.FALLBACK_ORIGIN.latitude, MapsConfig.FALLBACK_ORIGIN.longitude)
+
+            val geoRoutes = cachedGeoRoutes?.takeIf { cachedForDestination == place } ?: run {
+                // Small pause so the "embedding query · retrieving notes" step is visible even
+                // when Directions answers instantly.
+                delay(if (keepStep) 0L else 200L)
+                val fetched = fetchGeoRoutes(origin.latLng, place.latLng)
+                cachedGeoRoutes = fetched
+                cachedForDestination = place
+                fetched
+            }
+
+            if (geoRoutes.isEmpty()) {
+                _state.update {
+                    it.copy(
+                        assessing = false,
+                        searchError = if (!MapsConfig.isConfigured)
+                            "Maps API key not set — see local.properties."
+                        else
+                            "Couldn't fetch a real route to ${place.name} — check connectivity and try again."
+                    )
+                }
+                return@launch
+            }
+
             val dataset = SafetyDatasets.byId(_state.value.selectedDatasetId)
-            val result = engine.assess("${ORIGIN.name} ${ORIGIN.area}", "${place.name} ${place.area}", dataset)
+            val realEtas = geoRoutes.mapValues { it.value.minutes }
+            val result = engine.assess("${origin.name} ${origin.area}", "${place.name} ${place.area}", dataset, realEtas)
+            val paths = geoRoutes.mapValues { it.value.points }
+
             _state.update {
                 it.copy(
                     step = if (keepStep) it.step else RideStep.ROUTES,
                     assessing = false,
                     rag = result,
-                    routes = routePairFrom(result),
+                    routes = routePairFrom(result, paths),
                     safeSelected = true
                 )
             }
         }
     }
 
-    /** Starts the ride: contacts are notified immediately, then the dot walks the chosen route in real time. */
+    /** Two real walking-route alternatives, mapped onto the RAG engine's two corridors by duration. */
+    private suspend fun fetchGeoRoutes(origin: LatLng, destination: LatLng): Map<RouteCorridor, GeoRoute> {
+        val routes = DirectionsRepository.fetchRoutes(origin, destination)
+        if (routes.isEmpty()) return emptyMap()
+        val sorted = routes.sortedBy { it.minutes }
+        val faster = sorted.first()
+        val slower = sorted.last() // same route as faster if Directions only returned one alternative
+        return mapOf(RouteCorridor.BACK_LANE to faster, RouteCorridor.MAIN_ROAD to slower)
+    }
+
+    /** Starts the ride: contacts are notified immediately, then the dot walks the chosen real route live. */
     fun startRide() {
         val routes = _state.value.routes ?: return
         val chosen = if (_state.value.safeSelected) routes.safe else routes.fast
+        val origin = _state.value.origin ?: return
 
         _state.update {
             it.copy(
@@ -116,12 +242,12 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         val path = chosenPath()
         val destination = _state.value.destination
         if (destination != null) {
-            live.startTrip(ORIGIN, destination, chosen, _state.value.safeSelected, path, chosen.minutes)
+            live.startTrip(origin, destination, chosen, _state.value.safeSelected, path, chosen.minutes)
             val d = geoAt(path, 1f)
             SmsAlerts.send(
                 getApplication(),
                 contactsStore.recipients(),
-                AlertMessages.rideStarted(destination.name, chosen.label, chosen.minutes, d[0], d[1])
+                AlertMessages.rideStarted(destination.name, chosen.label, chosen.minutes, d.latitude, d.longitude)
             )
         }
 
@@ -158,7 +284,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         SmsAlerts.send(
             getApplication(),
             contactsStore.recipients(),
-            AlertMessages.sosRide(destination, here[0], here[1])
+            AlertMessages.sosRide(destination, here.latitude, here.longitude)
         )
         _state.update { it.copy(sosActive = true, contactRohan = ContactStatus.RESPONDING) }
     }
@@ -167,12 +293,19 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         rideJob?.cancel()
         assessJob?.cancel()
         live.endTrip()
-        _state.update { RideState(selectedDatasetId = it.selectedDatasetId) }
+        _state.update {
+            RideState(
+                selectedDatasetId = it.selectedDatasetId,
+                origin = it.origin,
+                locationPermissionGranted = it.locationPermissionGranted
+            )
+        }
     }
 
     override fun onCleared() {
         rideJob?.cancel()
         assessJob?.cancel()
+        searchJob?.cancel()
         super.onCleared()
     }
 }

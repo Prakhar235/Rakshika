@@ -4,15 +4,20 @@ A demo-ready Android app (Kotlin + Jetpack Compose) covering the core Rakshika
 flows: hold-to-trigger SOS, a check-in timer, a mock live-location map,
 an activity timeline, emergency contacts, and a fake-call decoy screen.
 
-Everything runs on in-memory state (`RakshikaViewModel`) seeded with sample
-data — no backend, API keys, or permissions are required to demo it.
+Most of it runs on in-memory state (`RakshikaViewModel`) seeded with sample
+data — no backend, API keys, or permissions needed. The exception is the Demo
+tab's **"Try it yourself"** ride, which uses a real Google Map with real
+place search and real routes (see "Real Google Maps setup" below) — that one
+needs a Maps API key and a location permission grant.
 
 ## Run it
 
 1. Open the `Rakshika` folder as a project in Android Studio (Koala or newer).
 2. Let Gradle sync — it needs internet access the first time to pull
-   dependencies (AndroidX, Compose BOM, Navigation Compose).
-3. Run on an emulator or device (minSdk 24).
+   dependencies (AndroidX, Compose BOM, Navigation Compose, Google Maps).
+3. Add a Google Maps Platform API key (see "Real Google Maps setup" below) if
+   you want the demo ride's search/routing/map to work.
+4. Run on an emulator or device (minSdk 24) with Google Play services.
 
 ## What's in the demo
 
@@ -34,14 +39,32 @@ data — no backend, API keys, or permissions are required to demo it.
     UI live on-device, narrated by Android's on-device `TextToSpeech` (falls
     back to timed captions if no TTS engine is available). Play, mute, jump to
     any beat, or switch scenes via the tabs at the top.
-  - **Try it yourself** — a hands-on "demo ride": search a destination against
-    a dummy directory of ~10 places, get two routes back (a faster one flagged
-    for poor lighting/reported incidents, and a recommended well-lit one — the
-    numbers are generated deterministically per place name, no backend), pick
-    one and start. The ride plays out live — a dot walks the route, ETA counts
-    down, contacts move from Notified → Seen, and the same hold-to-trigger SOS
-    button from Home works mid-ride. Ends on an "arrived safely" screen with a
-    "Plan another ride" reset. All state is in-memory and scoped to the tab.
+  - **Try it yourself** — a hands-on "demo ride" on a **real Google Map**: your
+    current location (device GPS, reverse-geocoded) is the start; typing a
+    destination hits **Google Places Autocomplete** for real search results;
+    picking one fetches **real walking routes** from the **Directions API**.
+    The on-device RAG safety engine (unchanged — see below) scores the two
+    real route alternatives and recommends one; real ETAs come straight from
+    Directions. Pick a route and start — a dot walks the real polyline on the
+    map, ETA counts down, contacts move from Notified → Seen, and the same
+    hold-to-trigger SOS button from Home works mid-ride, now sending real
+    coordinates. Ends on an "arrived safely" screen with a "Plan another ride"
+    reset.
+
+### Real Google Maps setup
+
+The demo ride needs a Google Maps Platform API key with **Maps SDK for
+Android**, **Places API**, **Directions API**, and **Geocoding API** enabled.
+
+1. Paste it into `local.properties` (gitignored, never committed):
+   `MAPS_API_KEY=your-key-here`
+2. `app/build.gradle.kts` reads it into `BuildConfig.MAPS_API_KEY` and a
+   manifest placeholder — nothing else to wire up.
+3. Grant the location permission prompt on the Search step (or it falls back
+   to a fixed real Bengaluru coordinate). Search, routing, and rendering are
+   all real; the safety-scoring RAG pipeline over lighting/incident notes is
+   still simulated data (see `app/.../rag/`), by design — that's the feature
+   being demoed.
 
 ## Emergency alert SMS (real, background)
 
@@ -80,17 +103,18 @@ Each mock maps to a real integration you've already got experience with:
 | `RakshikaViewModel` in-memory state | Firestore-backed repository + `WorkManager` for offline sync |
 | Online/offline toggle | Real `ConnectivityManager` callback |
 | SOS trigger | FCM push when online; background `SmsManager` alert to contacts is already wired (see above) |
-| Mock map canvas | Google Maps Compose or OSMDroid, `FusedLocationProviderClient` |
+| Mock map canvas (Home tab, Watch demo) | Google Maps Compose or OSMDroid, `FusedLocationProviderClient` — already done for the "Try it yourself" ride, see above |
 | Check-in timer | `AlarmManager` or a foreground service so it survives app kill |
 | Fake call | Trigger via volume-button long-press listener for one-tap access from a locked screen |
-| Safe-route scoring (Demo tab) | A directions API (Google Directions/Routes, Mapbox) plus a safety-signal layer — lighting, foot-traffic, and incident data — to actually rank candidate routes |
-| Destination search (Demo ride) | Places Autocomplete / geocoding API in place of the fixed 10-place dummy directory |
+| Safe-route scoring (Demo tab) | Real routes now come from the Directions API (done, see above); the *safety* layer — lighting, foot-traffic, incident data — driving the RAG score is still simulated `SafetyDatasets`, by design |
+| Destination search (Demo ride) | Done — Places Autocomplete + Place Details, see above |
 
 ## Notes
 
-- Mostly a self-contained UI/UX demo, with two real integrations layered on:
-  background alert SMS (`SEND_SMS`, see above) and live-location publishing to
-  Firebase Realtime Database (`LIVE_TRACKING.md`). No third-party SDKs.
+- Mostly a self-contained UI/UX demo, with real integrations layered on:
+  background alert SMS (`SEND_SMS`, see above), live-location publishing to
+  Firebase Realtime Database (`LIVE_TRACKING.md`), and Google Maps/Places/
+  Directions for the "Try it yourself" ride (see above, needs `MAPS_API_KEY`).
 - Package name: `com.rakshika.app`. Rename via Android Studio's refactor tool
   if you want a different namespace before publishing.
 # Rakshika

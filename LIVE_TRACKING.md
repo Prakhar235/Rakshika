@@ -33,8 +33,9 @@ Two readers:
 | `app/src/main/java/com/rakshika/app/live/LiveShareConfig.kt` | `const val DATABASE_URL = "…"` |
 | `tracker.html` | `var DATABASE_URL = "…";` |
 
-Nothing else to configure. (Optional: change `NORTH_LAT`/`SOUTH_LAT`/`WEST_LNG`/`EAST_LNG`
-in `LiveShareConfig.kt` to move the demo off central Bengaluru.)
+Nothing else to configure. The ride's coordinates are real (device location → real
+destination search → real Directions routes, see the "Real Google Maps" section of
+`README.md`), so there's no mock bounding box to move anymore.
 
 ## 3. Run the demo
 

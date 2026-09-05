@@ -1,7 +1,8 @@
 package com.rakshika.app.live
 
 import android.util.Log
-import androidx.compose.ui.geometry.Offset
+import com.google.android.gms.maps.model.LatLng
+import com.rakshika.app.geo.GeoPath
 import com.rakshika.app.ride.Place
 import com.rakshika.app.ride.RouteOption
 import kotlinx.coroutines.CoroutineScope
@@ -9,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -25,6 +25,9 @@ enum class LiveShareStatus { OFF, CONNECTING, LIVE, ERROR }
  * Writes go to  <DATABASE_URL>/liveTrips/<TRIP_ID>.json  — a PUT for the whole trip when it
  * starts, then small PATCHes for the moving location, SOS, and arrival. Every call is
  * best-effort: failures are logged and surfaced as [status] but never crash the demo.
+ *
+ * [path] is the real Directions polyline the ride walks — every lat/lng published here is
+ * genuine, not a mock-map coordinate.
  */
 class LiveShareRepository(private val scope: CoroutineScope) {
 
@@ -36,12 +39,12 @@ class LiveShareRepository(private val scope: CoroutineScope) {
         get() = "${LiveShareConfig.DATABASE_URL}/liveTrips/${LiveShareConfig.TRIP_ID}"
 
     /** A single location fix along the way. [t] is 0..1 ride progress. */
-    fun updateLocation(path: List<Offset>, t: Float, etaMinutesLeft: Int) {
+    fun updateLocation(path: List<LatLng>, t: Float, etaMinutesLeft: Int) {
         if (!LiveShareConfig.isConfigured) return
-        val geo = LiveShareConfig.toGeo(interpolate(path, t))
+        val fix = GeoPath.pointAt(path, t)
         val body = JSONObject()
-            .put("lat", geo[0])
-            .put("lng", geo[1])
+            .put("lat", fix.latitude)
+            .put("lng", fix.longitude)
             .put("progress", t.toDouble())
             .put("etaMinutesLeft", etaMinutesLeft)
             .put("updatedAt", now())
@@ -54,7 +57,7 @@ class LiveShareRepository(private val scope: CoroutineScope) {
         destination: Place,
         route: RouteOption,
         safeSelected: Boolean,
-        path: List<Offset>,
+        path: List<LatLng>,
         etaMinutes: Int
     ) {
         if (!LiveShareConfig.isConfigured) {
@@ -65,12 +68,9 @@ class LiveShareRepository(private val scope: CoroutineScope) {
         _status.value = LiveShareStatus.CONNECTING
 
         val polyline = JSONArray()
-        path.forEach { p ->
-            val g = LiveShareConfig.toGeo(p)
-            polyline.put(JSONObject().put("lat", g[0]).put("lng", g[1]))
-        }
-        val start = LiveShareConfig.toGeo(path.first())
-        val end = LiveShareConfig.toGeo(path.last())
+        path.forEach { p -> polyline.put(JSONObject().put("lat", p.latitude).put("lng", p.longitude)) }
+        val start = path.firstOrNull() ?: origin.latLng
+        val end = path.lastOrNull() ?: destination.latLng
 
         val trip = JSONObject()
             .put("status", "riding")
@@ -79,10 +79,10 @@ class LiveShareRepository(private val scope: CoroutineScope) {
             .put("sos", false)
             .put("origin", JSONObject()
                 .put("name", origin.name).put("area", origin.area)
-                .put("lat", start[0]).put("lng", start[1]))
+                .put("lat", start.latitude).put("lng", start.longitude))
             .put("destination", JSONObject()
                 .put("name", destination.name).put("area", destination.area)
-                .put("lat", end[0]).put("lng", end[1]))
+                .put("lat", end.latitude).put("lng", end.longitude))
             .put("route", JSONObject()
                 .put("label", route.label)
                 .put("kind", if (safeSelected) "safe" else "fast")
@@ -92,7 +92,7 @@ class LiveShareRepository(private val scope: CoroutineScope) {
                 .put("reasons", JSONArray(route.reasons)))
             .put("polyline", polyline)
             .put("location", JSONObject()
-                .put("lat", start[0]).put("lng", start[1])
+                .put("lat", start.latitude).put("lng", start.longitude)
                 .put("progress", 0.0)
                 .put("etaMinutesLeft", etaMinutes)
                 .put("updatedAt", now()))
@@ -161,30 +161,6 @@ class LiveShareRepository(private val scope: CoroutineScope) {
     }
 
     private fun now() = System.currentTimeMillis()
-
-    /** Arc-length interpolation along a normalised path (same math the map dot uses). */
-    private fun interpolate(path: List<Offset>, t: Float): Offset {
-        if (path.size < 2) return path.firstOrNull() ?: Offset.Zero
-        val segLen = FloatArray(path.size - 1)
-        var total = 0f
-        for (i in 1 until path.size) {
-            val d = (path[i] - path[i - 1]).getDistance()
-            segLen[i - 1] = d
-            total += d
-        }
-        var remaining = t.coerceIn(0f, 1f) * total
-        for (i in segLen.indices) {
-            val d = segLen[i]
-            if (remaining <= d || i == segLen.size - 1) {
-                val local = if (d == 0f) 0f else (remaining / d).coerceIn(0f, 1f)
-                val a = path[i]
-                val b = path[i + 1]
-                return Offset(a.x + (b.x - a.x) * local, a.y + (b.y - a.y) * local)
-            }
-            remaining -= d
-        }
-        return path.last()
-    }
 
     private companion object { const val TAG = "LiveShare" }
 }

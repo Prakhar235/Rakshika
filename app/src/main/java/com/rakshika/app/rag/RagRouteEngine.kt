@@ -61,13 +61,23 @@ class RagRouteEngine(
         indexedCount = store.size
     }
 
-    fun assess(originLabel: String, destinationLabel: String, dataset: SafetyDataset): RagResult {
+    /**
+     * [realEtas], when supplied, overrides the deterministic per-corridor ETA with real
+     * minutes from a routing API (e.g. Google Directions) — the safety scoring below is
+     * unchanged either way, it just displays a real number instead of a simulated one.
+     */
+    fun assess(
+        originLabel: String,
+        destinationLabel: String,
+        dataset: SafetyDataset,
+        realEtas: Map<RouteCorridor, Int>? = null
+    ): RagResult {
         if (indexedDatasetId != dataset.id) index(dataset)
 
         val query = buildQuery(originLabel, destinationLabel)
         val pool = store.query(query, topK * 2)
         val maxSim = (pool.maxOfOrNull { it.score } ?: 1f).coerceAtLeast(1e-4f)
-        val etas = deterministicEtas(destinationLabel, dataset)
+        val etas = realEtas ?: deterministicEtas(destinationLabel, dataset)
 
         val raw = listOf(RouteCorridor.MAIN_ROAD, RouteCorridor.BACK_LANE).map { corridor ->
             val relevant = pool
