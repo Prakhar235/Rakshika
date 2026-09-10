@@ -41,4 +41,7 @@ object LiveShareConfig {
         val lng = WEST_LNG + p.x * (EAST_LNG - WEST_LNG)
         return doubleArrayOf(lat, lng)
     }
+
+    /** Map every point of a mock-map path (0..1 offsets) to real coordinates. */
+    fun toGeoPath(path: List<Offset>): List<DoubleArray> = path.map { toGeo(it) }
 }

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareStatus
 import com.rakshika.app.rag.RagResult
 import com.rakshika.app.rag.RouteCorridor
@@ -52,11 +53,10 @@ import com.rakshika.app.ride.RideViewModel
 import com.rakshika.app.ride.RouteOption
 import com.rakshika.app.ui.mapkit.ROUTE_A
 import com.rakshika.app.ui.mapkit.ROUTE_B
-import com.rakshika.app.ui.mapkit.drawMarker
-import com.rakshika.app.ui.mapkit.drawRoadsAndBlocks
-import com.rakshika.app.ui.mapkit.drawRoute
-import com.rakshika.app.ui.mapkit.drawTravelDot
-import com.rakshika.app.ui.mapkit.pointAt
+import com.rakshika.app.ui.mapkit.RealMap
+import com.rakshika.app.ui.mapkit.formatDistance
+import com.rakshika.app.ui.mapkit.geoAlong
+import com.rakshika.app.ui.mapkit.pathLengthMeters
 import com.rakshika.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -228,7 +228,6 @@ private fun RoutesStep(
     val destination = state.destination ?: return
     val routes = state.routes ?: return
     val chosen = if (state.safeSelected) routes.safe else routes.fast
-    val chosenIsMain = chosen.corridor != RouteCorridor.BACK_LANE
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Row(
@@ -258,33 +257,47 @@ private fun RoutesStep(
 
         Spacer(Modifier.height(14.dp))
 
+        // ROUTE_B walks the main road, ROUTE_A the back lane — same start/end either way.
+        fun pathFor(corridor: RouteCorridor) = if (corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
+        val safePathGeo = remember(routes.safe.corridor) { LiveShareConfig.toGeoPath(pathFor(routes.safe.corridor)) }
+        val fastPathGeo = remember(routes.fast.corridor) { LiveShareConfig.toGeoPath(pathFor(routes.fast.corridor)) }
+        val safeDistance = remember(safePathGeo) { pathLengthMeters(safePathGeo) }
+        val fastDistance = remember(fastPathGeo) { pathLengthMeters(fastPathGeo) }
+
         Box(
             modifier = Modifier
                 .padding(horizontal = 20.dp)
                 .fillMaxWidth()
                 .height(220.dp)
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color(0xFFF1EFE8))
                 .border(0.5.dp, BorderHairline, RoundedCornerShape(20.dp))
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawRect(Color(0xFFF1EFE8))
-                drawRoadsAndBlocks()
-                drawMarker(ROUTE_B.first(), Color(0xFF378ADD), ring = true)
-                // ROUTE_B is drawn along the main road, ROUTE_A along the back lane.
-                drawRoute(
-                    ROUTE_A,
-                    if (chosenIsMain) Color(0xFFC98A2E) else Color(0xFF3B8F5C),
-                    width = if (!chosenIsMain) 6f else 3.5f,
-                    dashed = chosenIsMain
-                )
-                drawRoute(
-                    ROUTE_B,
-                    if (chosenIsMain) Color(0xFF3B8F5C) else Color(0xFFC98A2E),
-                    width = if (chosenIsMain) 6f else 3.5f,
-                    dashed = !chosenIsMain
-                )
-                drawMarker(ROUTE_B.last(), Color(0xFFD8365E))
+            // Both routes are always plotted — the selected one drawn bolder and on top.
+            RealMap(
+                modifier = Modifier.fillMaxSize(),
+                primaryRoute = if (state.safeSelected) safePathGeo else fastPathGeo,
+                primaryColor = if (state.safeSelected) RakshikaGreen else RakshikaAmber,
+                primaryWidth = 12f,
+                secondaryRoute = if (state.safeSelected) fastPathGeo else safePathGeo,
+                secondaryColor = if (state.safeSelected) RakshikaAmber else RakshikaGreen,
+                secondaryWidth = 6f
+            )
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(10.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceCard)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(RakshikaGreen))
+                Spacer(Modifier.width(5.dp))
+                Text(formatDistance(safeDistance), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(RakshikaAmber))
+                Spacer(Modifier.width(5.dp))
+                Text(formatDistance(fastDistance), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
         }
 
@@ -468,20 +481,30 @@ private fun RagFooter(rag: RagResult) {
 private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () -> Unit) {
     val destination = state.destination ?: return
 
+    val chosen = if (state.safeSelected) state.routes?.safe else state.routes?.fast
+    val alt = if (state.safeSelected) state.routes?.fast else state.routes?.safe
+    fun pathFor(corridor: RouteCorridor?) = if (corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
+    val path = pathFor(chosen?.corridor)
+    val altPath = pathFor(alt?.corridor)
+    val color = if (state.safeSelected) RakshikaGreen else RakshikaAmber
+
+    val pathGeo = remember(path) { LiveShareConfig.toGeoPath(path) }
+    val altPathGeo = remember(altPath) { LiveShareConfig.toGeoPath(altPath) }
+    val totalMeters = remember(pathGeo) { pathLengthMeters(pathGeo) }
+    val currentGeo = remember(path, state.rideProgress) { geoAlong(path, state.rideProgress) }
+    val remainingMeters = totalMeters * (1 - state.rideProgress)
+
     Box(Modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(Color(0xFFF1EFE8))
-            drawRoadsAndBlocks()
-            val chosen = if (state.safeSelected) state.routes?.safe else state.routes?.fast
-            val onMainRoad = chosen?.corridor != RouteCorridor.BACK_LANE
-            val path = if (onMainRoad) ROUTE_B else ROUTE_A
-            val color = if (state.safeSelected) Color(0xFF3B8F5C) else Color(0xFFC98A2E)
-            drawMarker(path.first(), Color(0xFF378ADD), ring = true)
-            drawRoute(path, color, width = 5.5f, dashed = false)
-            drawMarker(path.last(), Color(0xFFD8365E))
-            val p = pointAt(path, size.width, size.height, state.rideProgress)
-            drawTravelDot(p, color)
-        }
+        // The alternate (not taken) route stays visible, thin and muted, for context.
+        RealMap(
+            modifier = Modifier.fillMaxSize(),
+            primaryRoute = pathGeo,
+            primaryColor = color,
+            primaryWidth = 12f,
+            secondaryRoute = altPathGeo,
+            secondaryWidth = 5f,
+            current = currentGeo
+        )
 
         Row(
             modifier = Modifier
@@ -517,7 +540,11 @@ private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () 
             ) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text("${state.etaMinutesLeft} min", style = MaterialTheme.typography.titleSmall)
-                    Text("ETA remaining", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                    Text(
+                        "${formatDistance(remainingMeters)} left",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary
+                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
