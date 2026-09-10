@@ -44,4 +44,7 @@ object LiveShareConfig {
 
     /** Map every point of a mock-map path (0..1 offsets) to real coordinates. */
     fun toGeoPath(path: List<Offset>): List<DoubleArray> = path.map { toGeo(it) }
+
+    /** Real [lat, lng] of the demo's fixed "current location" — matches ROUTE_A/ROUTE_B's shared start point. */
+    val ORIGIN_GEO: DoubleArray by lazy { toGeo(Offset(0.18f, 0.45f)) }
 }

@@ -12,6 +12,7 @@ import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.rag.RagRouteEngine
 import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.SafetyDatasets
+import com.rakshika.app.search.PlaceSearch
 import com.rakshika.app.ui.mapkit.ROUTE_A
 import com.rakshika.app.ui.mapkit.ROUTE_B
 import com.rakshika.app.ui.mapkit.pointAt
@@ -32,13 +33,27 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val contactsStore = ContactsStore(app)
     private var rideJob: Job? = null
     private var assessJob: Job? = null
+    private var searchJob: Job? = null
 
     /** Firebase publish state + path, for the "Sharing live" chip on the ride screen. */
     val liveStatus = live.status
     val liveTripUrl = live.tripUrl
 
+    /** Debounced free-text place search via Photon (OSM geocoder), biased to the demo's fixed origin. */
     fun updateQuery(text: String) {
         _state.update { it.copy(query = text) }
+        searchJob?.cancel()
+        if (text.isBlank()) {
+            _state.update { it.copy(searchResults = null, searching = false) }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            delay(300)
+            _state.update { it.copy(searching = true) }
+            val origin = LiveShareConfig.ORIGIN_GEO
+            val results = PlaceSearch.search(text, origin[0], origin[1])
+            if (isActive) _state.update { it.copy(searchResults = results, searching = false) }
+        }
     }
 
     /** Pick which safety dataset the on-device RAG retrieves from; re-runs live if a route is up. */
@@ -173,6 +188,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         rideJob?.cancel()
         assessJob?.cancel()
+        searchJob?.cancel()
         super.onCleared()
     }
 }

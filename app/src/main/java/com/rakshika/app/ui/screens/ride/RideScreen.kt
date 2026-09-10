@@ -126,11 +126,17 @@ private fun SearchStep(
 
         Spacer(Modifier.height(18.dp))
 
-        Text(
-            if (state.query.isBlank()) "Nearby" else "Results",
-            style = MaterialTheme.typography.titleSmall,
-            color = TextSecondary
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (state.query.isBlank()) "Nearby" else "Results",
+                style = MaterialTheme.typography.titleSmall,
+                color = TextSecondary
+            )
+            if (state.searching) {
+                Spacer(Modifier.width(8.dp))
+                CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
+            }
+        }
         Spacer(Modifier.height(8.dp))
 
         if (state.suggestions.isEmpty()) {

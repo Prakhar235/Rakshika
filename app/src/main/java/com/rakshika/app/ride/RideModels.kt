@@ -24,6 +24,11 @@ val PLACES = listOf(
     Place("Lakeview Residency", "Sector 33")
 )
 
+/** Static offline fallback used when live search hasn't run yet, or the network call failed. */
+fun localPlaces(query: String): List<Place> = PLACES.filter {
+    it.name.contains(query, ignoreCase = true) || it.area.contains(query, ignoreCase = true)
+}
+
 data class RouteOption(
     val label: String,
     val minutes: Int,
@@ -63,6 +68,9 @@ data class RideState(
     val rag: RagResult? = null,
     val destination: Place? = null,
     val routes: RoutePair? = null,
+    /** Live Photon results for [query]; null while unsearched/blank, or if the last call failed. */
+    val searchResults: List<Place>? = null,
+    val searching: Boolean = false,
     val safeSelected: Boolean = true,
     val rideProgress: Float = 0f,
     val etaMinutesLeft: Int = 0,
@@ -72,11 +80,5 @@ data class RideState(
     val sosActive: Boolean = false
 ) {
     val suggestions: List<Place>
-        get() = if (query.isBlank()) {
-            PLACES.take(5)
-        } else {
-            PLACES.filter {
-                it.name.contains(query, ignoreCase = true) || it.area.contains(query, ignoreCase = true)
-            }
-        }
+        get() = if (query.isBlank()) PLACES.take(5) else (searchResults ?: localPlaces(query))
 }
