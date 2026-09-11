@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import com.rakshika.app.rag.RouteCorridor
 
 /**
  * A drawn (non-Google-Maps) mock street grid shared by the narrated demo and the
@@ -44,6 +45,9 @@ internal val ROUTE_A = listOf(
 internal val ROUTE_B = listOf(
     Offset(.18f, .45f), Offset(.18f, .17f), Offset(.85f, .17f), Offset(.85f, .20f)
 )
+
+/** Which fixed mock-map polyline stands in for a corridor when no real route geometry is available. */
+fun mockPathFor(corridor: RouteCorridor?): List<Offset> = if (corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
 
 internal fun DrawScope.drawRoadsAndBlocks() {
     val w = size.width

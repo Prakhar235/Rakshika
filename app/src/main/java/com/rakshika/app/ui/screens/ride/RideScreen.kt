@@ -1,5 +1,8 @@
 package com.rakshika.app.ui.screens.ride
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,14 +38,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.geo.formatDistance
+import com.rakshika.app.geo.geoPointAt
+import com.rakshika.app.geo.pathLengthMeters
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareStatus
+import com.rakshika.app.location.DeviceLocation
 import com.rakshika.app.rag.RagResult
-import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.RouteEvidence
 import com.rakshika.app.rag.SafetyDatasets
 import com.rakshika.app.ride.ORIGIN
@@ -51,12 +58,10 @@ import com.rakshika.app.ride.RideState
 import com.rakshika.app.ride.RideStep
 import com.rakshika.app.ride.RideViewModel
 import com.rakshika.app.ride.RouteOption
+import com.rakshika.app.ride.resolvedGeoPath
 import com.rakshika.app.ui.mapkit.ROUTE_A
 import com.rakshika.app.ui.mapkit.ROUTE_B
 import com.rakshika.app.ui.mapkit.RealMap
-import com.rakshika.app.ui.mapkit.formatDistance
-import com.rakshika.app.ui.mapkit.geoAlong
-import com.rakshika.app.ui.mapkit.pathLengthMeters
 import com.rakshika.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -68,7 +73,10 @@ fun RideScreen(viewModel: RideViewModel = viewModel()) {
 
     Column(modifier = Modifier.fillMaxSize()) {
         when (state.step) {
-            RideStep.SEARCH -> SearchStep(state, viewModel::updateQuery, viewModel::selectDestination, viewModel::selectDataset)
+            RideStep.SEARCH -> SearchStep(
+                state, viewModel::updateQuery, viewModel::selectDestination,
+                viewModel::selectDataset, viewModel::refreshDeviceLocation
+            )
             RideStep.ROUTES -> RoutesStep(state, viewModel::selectRoute, viewModel::backToSearch, viewModel::startRide)
             RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos)
             RideStep.ARRIVED -> ArrivedStep(state, viewModel::newRide)
@@ -83,8 +91,23 @@ private fun SearchStep(
     state: RideState,
     onQuery: (String) -> Unit,
     onSelect: (Place) -> Unit,
-    onSelectDataset: (String) -> Unit
+    onSelectDataset: (String) -> Unit,
+    onLocationReady: () -> Unit
 ) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { onLocationReady() }
+    LaunchedEffect(Unit) {
+        if (DeviceLocation.hasPermission(context)) {
+            onLocationReady()
+        } else {
+            permissionLauncher.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Row(
             modifier = Modifier
@@ -123,6 +146,12 @@ private fun SearchStep(
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             shape = RoundedCornerShape(12.dp)
         )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (state.usingDeviceLocation) "Searching near your current location" else "Searching near the demo default location",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextSecondary
+        )
 
         Spacer(Modifier.height(18.dp))
 
@@ -140,7 +169,9 @@ private fun SearchStep(
         Spacer(Modifier.height(8.dp))
 
         if (state.suggestions.isEmpty()) {
-            Text("No matches — try another name.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            if (!state.searching) {
+                Text("No matches — try another name.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+            }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.suggestions) { place ->
@@ -263,12 +294,11 @@ private fun RoutesStep(
 
         Spacer(Modifier.height(14.dp))
 
-        // ROUTE_B walks the main road, ROUTE_A the back lane — same start/end either way.
-        fun pathFor(corridor: RouteCorridor) = if (corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
-        val safePathGeo = remember(routes.safe.corridor) { LiveShareConfig.toGeoPath(pathFor(routes.safe.corridor)) }
-        val fastPathGeo = remember(routes.fast.corridor) { LiveShareConfig.toGeoPath(pathFor(routes.fast.corridor)) }
-        val safeDistance = remember(safePathGeo) { pathLengthMeters(safePathGeo) }
-        val fastDistance = remember(fastPathGeo) { pathLengthMeters(fastPathGeo) }
+        // Real routed road geometry when the destination was geocoded, else the fixed mock-map stand-in.
+        val safePathGeo = routes.safe.resolvedGeoPath()
+        val fastPathGeo = routes.fast.resolvedGeoPath()
+        val safeDistance = pathLengthMeters(safePathGeo)
+        val fastDistance = pathLengthMeters(fastPathGeo)
 
         Box(
             modifier = Modifier
@@ -305,6 +335,10 @@ private fun RoutesStep(
                 Spacer(Modifier.width(5.dp))
                 Text(formatDistance(fastDistance), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
+            RouteSourceBadge(
+                real = routes.safe.geoPath != null || routes.fast.geoPath != null,
+                modifier = Modifier.align(Alignment.TopStart).padding(10.dp)
+            )
         }
 
         Spacer(Modifier.height(14.dp))
@@ -409,6 +443,26 @@ private fun SafetyMeter(score: Int, accent: Color) {
     }
 }
 
+/** Shows whether the plotted route is live real road geometry or the offline mock-map fallback. */
+@Composable
+private fun RouteSourceBadge(real: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceCard)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(if (real) RakshikaGreen else RakshikaAmber))
+        Spacer(Modifier.width(5.dp))
+        Text(
+            if (real) "Live roads" else "Simulated route — no live roads found",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextSecondary
+        )
+    }
+}
+
 @Composable
 private fun EvidencePanel(route: RouteOption) {
     var expanded by remember { mutableStateOf(false) }
@@ -489,15 +543,13 @@ private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () 
 
     val chosen = if (state.safeSelected) state.routes?.safe else state.routes?.fast
     val alt = if (state.safeSelected) state.routes?.fast else state.routes?.safe
-    fun pathFor(corridor: RouteCorridor?) = if (corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
-    val path = pathFor(chosen?.corridor)
-    val altPath = pathFor(alt?.corridor)
     val color = if (state.safeSelected) RakshikaGreen else RakshikaAmber
 
-    val pathGeo = remember(path) { LiveShareConfig.toGeoPath(path) }
-    val altPathGeo = remember(altPath) { LiveShareConfig.toGeoPath(altPath) }
-    val totalMeters = remember(pathGeo) { pathLengthMeters(pathGeo) }
-    val currentGeo = remember(path, state.rideProgress) { geoAlong(path, state.rideProgress) }
+    // Real routed road geometry when the destination was geocoded, else the fixed mock-map stand-in.
+    val pathGeo = chosen?.resolvedGeoPath() ?: LiveShareConfig.toGeoPath(ROUTE_B)
+    val altPathGeo = alt?.resolvedGeoPath() ?: LiveShareConfig.toGeoPath(ROUTE_A)
+    val totalMeters = pathLengthMeters(pathGeo)
+    val currentGeo = geoPointAt(pathGeo, state.rideProgress)
     val remainingMeters = totalMeters * (1 - state.rideProgress)
 
     Box(Modifier.fillMaxSize()) {
@@ -510,6 +562,11 @@ private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () 
             secondaryRoute = altPathGeo,
             secondaryWidth = 5f,
             current = currentGeo
+        )
+
+        RouteSourceBadge(
+            real = chosen?.geoPath != null,
+            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
         )
 
         Row(

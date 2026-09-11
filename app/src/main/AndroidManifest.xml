@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Declared for the real build. The demo build does not request these
-         at runtime, since all data on screen is simulated locally. -->
+    <!-- Location is requested at runtime, on the search screen, to bias/restrict place
+         search and real routing to near the user; the ride itself is still simulated. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.SEND_SMS" />

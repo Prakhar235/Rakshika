@@ -7,12 +7,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import com.rakshika.app.live.LiveShareConfig
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
@@ -20,32 +18,6 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-
-/** Great-circle distance between two `[lat, lng]` points, in meters. */
-fun haversineMeters(a: DoubleArray, b: DoubleArray): Double {
-    val r = 6371000.0
-    val dLat = Math.toRadians(b[0] - a[0])
-    val dLng = Math.toRadians(b[1] - a[1])
-    val lat1 = Math.toRadians(a[0])
-    val lat2 = Math.toRadians(b[0])
-    val h = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
-    return 2 * r * Math.asin(Math.sqrt(h))
-}
-
-/** Total length of a lat/lng path, in meters. */
-fun pathLengthMeters(points: List<DoubleArray>): Double {
-    var total = 0.0
-    for (i in 1 until points.size) total += haversineMeters(points[i - 1], points[i])
-    return total
-}
-
-fun formatDistance(meters: Double): String =
-    if (meters >= 950) "%.1f km".format(meters / 1000) else "${meters.toInt().coerceAtLeast(0)} m"
-
-/** The real lat/lng a fraction [t] (0..1) along the mock-map [path] lands on. */
-fun geoAlong(path: List<Offset>, t: Float): DoubleArray =
-    LiveShareConfig.toGeo(pointAt(path, 1f, 1f, t))
 
 private var osmdroidInitialized = false
 private fun initOsmdroid(context: Context) {

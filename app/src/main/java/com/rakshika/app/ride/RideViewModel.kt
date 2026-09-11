@@ -1,22 +1,24 @@
 package com.rakshika.app.ride
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rakshika.app.alerts.AlertMessages
 import com.rakshika.app.alerts.ContactsStore
 import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.geo.geoPointAt
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
+import com.rakshika.app.location.DeviceLocation
 import com.rakshika.app.rag.RagRouteEngine
-import com.rakshika.app.rag.RouteCorridor
 import com.rakshika.app.rag.SafetyDatasets
+import com.rakshika.app.routing.ValhallaRouting
 import com.rakshika.app.search.PlaceSearch
-import com.rakshika.app.ui.mapkit.ROUTE_A
 import com.rakshika.app.ui.mapkit.ROUTE_B
-import com.rakshika.app.ui.mapkit.pointAt
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,11 +37,26 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private var assessJob: Job? = null
     private var searchJob: Job? = null
 
+    /** Search-bias / routing origin: the device's real location once found, else the demo's fixed one. */
+    private var originGeo: DoubleArray = LiveShareConfig.ORIGIN_GEO
+
     /** Firebase publish state + path, for the "Sharing live" chip on the ride screen. */
     val liveStatus = live.status
     val liveTripUrl = live.tripUrl
 
-    /** Debounced free-text place search via Photon (OSM geocoder), biased to the demo's fixed origin. */
+    /** Tries the device's last-known location (if permission was granted); falls back to the demo default. */
+    fun refreshDeviceLocation() {
+        val loc = DeviceLocation.lastKnown(getApplication())
+        if (loc != null) {
+            originGeo = loc
+            Log.i(TAG, "Using device location for search/routing: ${loc[0]},${loc[1]}")
+        } else {
+            Log.i(TAG, "No device location available (permission denied or no fix yet) — using the demo default origin")
+        }
+        _state.update { it.copy(usingDeviceLocation = loc != null) }
+    }
+
+    /** Debounced free-text place search via Photon (OSM geocoder), biased to [originGeo]. */
     fun updateQuery(text: String) {
         _state.update { it.copy(query = text) }
         searchJob?.cancel()
@@ -47,11 +64,12 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(searchResults = null, searching = false) }
             return
         }
+        // Mark searching immediately (not after the debounce) so the UI can't show the
+        // coordinate-less local fallback list mid-typing — see RideState.suggestions.
+        _state.update { it.copy(searching = true, searchResults = null) }
         searchJob = viewModelScope.launch {
             delay(300)
-            _state.update { it.copy(searching = true) }
-            val origin = LiveShareConfig.ORIGIN_GEO
-            val results = PlaceSearch.search(text, origin[0], origin[1])
+            val results = PlaceSearch.search(text, originGeo[0], originGeo[1])
             if (isActive) _state.update { it.copy(searchResults = results, searching = false) }
         }
     }
@@ -79,32 +97,48 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { RideState(query = it.query, selectedDatasetId = it.selectedDatasetId) }
     }
 
-    /** The mock-map polyline the chosen corridor walks — ROUTE_B is the main road, ROUTE_A the back lane. */
-    private fun chosenPath() =
-        if (currentChoice()?.corridor != RouteCorridor.BACK_LANE) ROUTE_B else ROUTE_A
-
     private fun currentChoice() = _state.value.routes?.let {
         if (_state.value.safeSelected) it.safe else it.fast
     }
 
-    /** Real lat/lng of a point [t] (0..1) along [path], via the shared map bounding box. */
-    private fun geoAt(path: List<androidx.compose.ui.geometry.Offset>, t: Float): DoubleArray =
-        LiveShareConfig.toGeo(pointAt(path, 1f, 1f, t))
+    /** The real `[lat, lng]` path the current choice walks — the live routed road, or the mock-map stand-in. */
+    private fun chosenGeoPath(): List<DoubleArray> =
+        currentChoice()?.resolvedGeoPath() ?: LiveShareConfig.toGeoPath(ROUTE_B)
 
     private fun runAssessment(place: Place, keepStep: Boolean) {
         assessJob?.cancel()
         assessJob = viewModelScope.launch {
             _state.update { it.copy(assessing = true) }
-            // Small pause so the "embedding query · retrieving notes" step is visible.
-            delay(if (keepStep) 280L else 460L)
             val dataset = SafetyDatasets.byId(_state.value.selectedDatasetId)
-            val result = engine.assess("${ORIGIN.name} ${ORIGIN.area}", "${place.name} ${place.area}", dataset)
+
+            // The on-device RAG safety scoring and the real-road lookup run concurrently —
+            // one's a small delay for UX, the other a real network call that may fail or be slow.
+            val ragDeferred = async {
+                // Small pause so the "embedding query · retrieving notes" step is visible.
+                delay(if (keepStep) 280L else 460L)
+                engine.assess("${ORIGIN.name} ${ORIGIN.area}", "${place.name} ${place.area}", dataset)
+            }
+            val geoDeferred = async {
+                val lat = place.lat
+                val lng = place.lng
+                if (lat != null && lng != null) {
+                    Log.i(TAG, "Requesting live routes for \"${place.name}\" @ $lat,$lng")
+                    ValhallaRouting.findRoutes(originGeo[0], originGeo[1], lat, lng)
+                } else {
+                    Log.w(TAG, "\"${place.name}\" has no coordinates — skipping live routing, using the mock route")
+                    null
+                }
+            }
+
+            val result = ragDeferred.await()
+            val geoRoutes = geoDeferred.await()
+
             _state.update {
                 it.copy(
                     step = if (keepStep) it.step else RideStep.ROUTES,
                     assessing = false,
                     rag = result,
-                    routes = routePairFrom(result),
+                    routes = routePairFrom(result, geoRoutes),
                     safeSelected = true
                 )
             }
@@ -128,11 +162,11 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
-        val path = chosenPath()
+        val path = chosenGeoPath()
         val destination = _state.value.destination
         if (destination != null) {
             live.startTrip(ORIGIN, destination, chosen, _state.value.safeSelected, path, chosen.minutes)
-            val d = geoAt(path, 1f)
+            val d = path.last()
             SmsAlerts.send(
                 getApplication(),
                 contactsStore.recipients(),
@@ -167,8 +201,8 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
 
     fun triggerSos() {
         live.setSos(true)
-        val path = chosenPath()
-        val here = geoAt(path, _state.value.rideProgress)
+        val path = chosenGeoPath()
+        val here = geoPointAt(path, _state.value.rideProgress)
         val destination = _state.value.destination?.name ?: "my destination"
         SmsAlerts.send(
             getApplication(),
@@ -191,4 +225,6 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         searchJob?.cancel()
         super.onCleared()
     }
+
+    private companion object { const val TAG = "RideViewModel" }
 }
