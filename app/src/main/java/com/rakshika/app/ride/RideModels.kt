@@ -49,6 +49,19 @@ data class RouteOption(
 /** The real geo path for this option: live road-following polyline when found, else the fixed mock-map stand-in. */
 fun RouteOption.resolvedGeoPath(): List<DoubleArray> = geoPath ?: LiveShareConfig.toGeoPath(mockPathFor(corridor))
 
+/** Re-applies a freshly recalculated route (a mid-ride reroute) onto this option, keeping its safety scoring. */
+fun RouteOption.withRoutedGeometry(geoRoutes: RoutingResult?): RouteOption {
+    val real = when (corridor) {
+        RouteCorridor.MAIN_ROAD -> geoRoutes?.mainRoad
+        RouteCorridor.BACK_LANE -> geoRoutes?.backLane
+        RouteCorridor.BOTH -> null
+    }
+    return if (real == null) this else copy(
+        minutes = (real.durationSeconds / 60).roundToInt().coerceAtLeast(1),
+        geoPath = real.points
+    )
+}
+
 /** [safe] is the RAG-recommended corridor, [fast] is the other one (kept for screen wiring). */
 data class RoutePair(val fast: RouteOption, val safe: RouteOption)
 
@@ -91,6 +104,8 @@ data class RideState(
     /** Live Photon results for [query]; null while unsearched/blank, or if the last call failed. */
     val searchResults: List<Place>? = null,
     val searching: Boolean = false,
+    /** Live Overpass results near the device, shown as "Nearby" before the user types anything. */
+    val nearbyResults: List<Place>? = null,
     /** Whether search/routing are biased to the device's real location vs. the demo's fixed default. */
     val usingDeviceLocation: Boolean = false,
     val safeSelected: Boolean = true,
@@ -99,11 +114,15 @@ data class RideState(
     val sharingLive: Boolean = false,
     val contactAmma: ContactStatus? = null,
     val contactRohan: ContactStatus? = null,
-    val sosActive: Boolean = false
+    val sosActive: Boolean = false,
+    /** True while a mid-ride reroute is being recalculated from the marker's current position. */
+    val rerouting: Boolean = false
 ) {
     val suggestions: List<Place>
         get() = when {
-            query.isBlank() -> PLACES.take(5)
+            // Real places actually near the device once Overpass has answered; the static
+            // coordinate-less list is only a fallback for offline/no-permission/no-fix.
+            query.isBlank() -> nearbyResults ?: PLACES.take(5)
             // While a live search is in flight, don't show the (coordinate-less) local
             // fallback — tapping it before Photon replies would silently lose lat/lng
             // and fall back to the mock route instead of a real routed one.

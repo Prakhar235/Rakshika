@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Dataset
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -78,7 +79,7 @@ fun RideScreen(viewModel: RideViewModel = viewModel()) {
                 viewModel::selectDataset, viewModel::refreshDeviceLocation
             )
             RideStep.ROUTES -> RoutesStep(state, viewModel::selectRoute, viewModel::backToSearch, viewModel::startRide)
-            RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos)
+            RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos, viewModel::reroute)
             RideStep.ARRIVED -> ArrivedStep(state, viewModel::newRide)
         }
     }
@@ -312,10 +313,10 @@ private fun RoutesStep(
             RealMap(
                 modifier = Modifier.fillMaxSize(),
                 primaryRoute = if (state.safeSelected) safePathGeo else fastPathGeo,
-                primaryColor = if (state.safeSelected) RakshikaGreen else RakshikaAmber,
+                primaryColor = if (state.safeSelected) RakshikaGreen else RakshikaRed,
                 primaryWidth = 12f,
                 secondaryRoute = if (state.safeSelected) fastPathGeo else safePathGeo,
-                secondaryColor = if (state.safeSelected) RakshikaAmber else RakshikaGreen,
+                secondaryColor = if (state.safeSelected) RakshikaRed else RakshikaGreen,
                 secondaryWidth = 6f
             )
             Row(
@@ -331,7 +332,7 @@ private fun RoutesStep(
                 Spacer(Modifier.width(5.dp))
                 Text(formatDistance(safeDistance), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                 Spacer(Modifier.width(10.dp))
-                Box(Modifier.size(7.dp).clip(CircleShape).background(RakshikaAmber))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(RakshikaRed))
                 Spacer(Modifier.width(5.dp))
                 Text(formatDistance(fastDistance), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
@@ -345,7 +346,7 @@ private fun RoutesStep(
 
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             RouteCard(routes.safe, selected = state.safeSelected, accent = RakshikaGreen) { onSelectRoute(true) }
-            RouteCard(routes.fast, selected = !state.safeSelected, accent = RakshikaAmber) { onSelectRoute(false) }
+            RouteCard(routes.fast, selected = !state.safeSelected, accent = RakshikaRed) { onSelectRoute(false) }
 
             if (chosen.evidence.isNotEmpty()) EvidencePanel(chosen)
 
@@ -364,7 +365,7 @@ private fun RoutesStep(
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (state.safeSelected) RakshikaGreen else RakshikaAmber
+                    containerColor = if (state.safeSelected) RakshikaGreen else RakshikaRed
                 )
             ) {
                 Icon(Icons.Filled.Navigation, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -538,12 +539,14 @@ private fun RagFooter(rag: RagResult) {
 /* ---------------- Riding ---------------- */
 
 @Composable
-private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () -> Unit) {
+private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () -> Unit, onReroute: () -> Unit) {
     val destination = state.destination ?: return
 
     val chosen = if (state.safeSelected) state.routes?.safe else state.routes?.fast
     val alt = if (state.safeSelected) state.routes?.fast else state.routes?.safe
-    val color = if (state.safeSelected) RakshikaGreen else RakshikaAmber
+    // Safe (main-road) route is always green, the shorter/riskier one always red — on the map and everywhere else.
+    val color = if (state.safeSelected) RakshikaGreen else RakshikaRed
+    val altColor = if (state.safeSelected) RakshikaRed else RakshikaGreen
 
     // Real routed road geometry when the destination was geocoded, else the fixed mock-map stand-in.
     val pathGeo = chosen?.resolvedGeoPath() ?: LiveShareConfig.toGeoPath(ROUTE_B)
@@ -560,8 +563,10 @@ private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () 
             primaryColor = color,
             primaryWidth = 12f,
             secondaryRoute = altPathGeo,
+            secondaryColor = altColor,
             secondaryWidth = 5f,
-            current = currentGeo
+            current = currentGeo,
+            zoomToCurrentOnStart = true
         )
 
         RouteSourceBadge(
@@ -614,6 +619,37 @@ private fun RidingStep(state: RideState, liveStatus: LiveShareStatus, onSos: () 
             state.contactAmma?.let { ContactBadge("Amma", it) }
             Spacer(Modifier.height(6.dp))
             state.contactRohan?.let { ContactBadge("Rohan", it) }
+        }
+
+        if (state.rerouting) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(SurfaceCard)
+                    .border(0.5.dp, BorderHairline, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
+                Spacer(Modifier.width(8.dp))
+                Text("Recalculating route from here…", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp, 16.dp, 16.dp, 28.dp)
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(SurfaceCard)
+                .border(0.5.dp, BorderHairline, CircleShape)
+                .clickable(enabled = !state.rerouting, onClick = onReroute),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Autorenew, contentDescription = "Reroute from here", tint = RakshikaRed, modifier = Modifier.size(22.dp))
         }
 
         if (state.sosActive) {

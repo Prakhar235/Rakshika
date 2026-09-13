@@ -45,3 +45,25 @@ fun geoPointAt(path: List<DoubleArray>, t: Float): DoubleArray {
     }
     return path.last()
 }
+
+/** The tail of [path] from fraction [t] onward — used to re-base a route on the marker's current spot when rerouting. */
+fun remainingGeoPath(path: List<DoubleArray>, t: Float): List<DoubleArray> {
+    if (path.size < 2) return path
+    val here = geoPointAt(path, t)
+    val segLens = DoubleArray(path.size - 1)
+    var total = 0.0
+    for (i in 1 until path.size) {
+        val d = haversineMeters(path[i - 1], path[i])
+        segLens[i - 1] = d
+        total += d
+    }
+    var remaining = t.coerceIn(0f, 1f) * total
+    for (i in segLens.indices) {
+        val d = segLens[i]
+        if (remaining <= d || i == segLens.lastIndex) {
+            return listOf(here) + path.subList(i + 1, path.size)
+        }
+        remaining -= d
+    }
+    return listOf(here, path.last())
+}

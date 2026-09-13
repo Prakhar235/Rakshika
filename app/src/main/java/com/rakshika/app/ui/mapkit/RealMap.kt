@@ -41,7 +41,9 @@ fun RealMap(
     secondaryRoute: List<DoubleArray>? = null,
     secondaryColor: Color = Color(0xFF9C978A),
     secondaryWidth: Float = 7f,
-    current: DoubleArray? = null
+    current: DoubleArray? = null,
+    /** On first render, zoom in close on [current] instead of fitting the whole route — used once the ride starts. */
+    zoomToCurrentOnStart: Boolean = false
 ) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { initOsmdroid(context) }
@@ -104,7 +106,14 @@ fun RealMap(
                 secondaryLine.setPoints(emptyList())
             }
 
-            if (!fitted[0] && fitPts != null) {
+            if (!fitted[0] && zoomToCurrentOnStart && current != null) {
+                val point = GeoPoint(current[0], current[1])
+                mv.post {
+                    mv.controller.setZoom(18.0)
+                    mv.controller.setCenter(point)
+                }
+                fitted[0] = true
+            } else if (!fitted[0] && fitPts != null) {
                 val box = BoundingBox.fromGeoPoints(fitPts).increaseByScale(1.5f)
                 mv.post { mv.zoomToBoundingBox(box, false) }
                 fitted[0] = true

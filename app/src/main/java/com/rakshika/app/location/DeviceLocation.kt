@@ -9,9 +9,10 @@ import androidx.core.content.ContextCompat
 
 /**
  * The device's last-known location, read via the plain Android [LocationManager] —
- * no Google Play Services / FusedLocationProvider dependency needed. Used only to
- * bias/restrict place search and real routing to near the user; the ride simulation
- * itself is unaffected.
+ * no Google Play Services / FusedLocationProvider dependency needed. Biases/restricts
+ * place search and real routing to near the user, and anchors the mock-map fallback
+ * path (see [com.rakshika.app.live.LiveShareConfig.setLiveOrigin]) onto the device's
+ * real position instead of the fixed demo spot.
  */
 object DeviceLocation {
 

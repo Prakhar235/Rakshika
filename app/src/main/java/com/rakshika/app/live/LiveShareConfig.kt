@@ -35,16 +35,42 @@ object LiveShareConfig {
     const val WEST_LNG: Double = 77.5850
     const val EAST_LNG: Double = 77.6080
 
-    /** Map a normalised map point to real coordinates: [lat, lng]. */
-    fun toGeo(p: Offset): DoubleArray {
+    /** The mock map's shared start point (ROUTE_A/ROUTE_B both begin here). */
+    private val MOCK_ORIGIN_OFFSET = Offset(0.18f, 0.45f)
+
+    /** The device's real position once [setLiveOrigin] has been called, else null (fixed MG Road demo spot). */
+    private var liveOriginGeo: DoubleArray? = null
+
+    /** Anchors every mock-map fallback path onto a real position — call once the device's GPS fix is known. */
+    fun setLiveOrigin(lat: Double, lng: Double) {
+        liveOriginGeo = doubleArrayOf(lat, lng)
+    }
+
+    private fun toFixedGeo(p: Offset): DoubleArray {
         val lat = NORTH_LAT - p.y * (NORTH_LAT - SOUTH_LAT)
         val lng = WEST_LNG + p.x * (EAST_LNG - WEST_LNG)
         return doubleArrayOf(lat, lng)
     }
 
+    private val fixedOriginGeo: DoubleArray by lazy { toFixedGeo(MOCK_ORIGIN_OFFSET) }
+
+    /**
+     * Map a normalised map point to real coordinates: [lat, lng]. Once [setLiveOrigin] has been
+     * called, the whole fixed MG Road box is translated so its shared start point lands on the
+     * device's real position — same shape, genuinely located.
+     */
+    fun toGeo(p: Offset): DoubleArray {
+        val fixed = toFixedGeo(p)
+        val live = liveOriginGeo ?: return fixed
+        return doubleArrayOf(
+            fixed[0] + (live[0] - fixedOriginGeo[0]),
+            fixed[1] + (live[1] - fixedOriginGeo[1])
+        )
+    }
+
     /** Map every point of a mock-map path (0..1 offsets) to real coordinates. */
     fun toGeoPath(path: List<Offset>): List<DoubleArray> = path.map { toGeo(it) }
 
-    /** Real [lat, lng] of the demo's fixed "current location" — matches ROUTE_A/ROUTE_B's shared start point. */
-    val ORIGIN_GEO: DoubleArray by lazy { toGeo(Offset(0.18f, 0.45f)) }
+    /** Real [lat, lng] of the demo's "current location" — the device's own position once known. */
+    val ORIGIN_GEO: DoubleArray get() = liveOriginGeo ?: fixedOriginGeo
 }

@@ -1,6 +1,7 @@
 package com.rakshika.app.search
 
 import android.util.Log
+import com.rakshika.app.geo.haversineMeters
 import com.rakshika.app.ride.Place
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,21 +43,65 @@ object PlaceSearch {
             places
         }
 
-    private fun fetch(url: String): String? {
+    /**
+     * Real named places actually near [lat]/[lon], via the Overpass API (OSM, no key) — used for
+     * the "Nearby" list shown before the user types anything, so it reflects wherever the device
+     * really is instead of a fixed demo spot. Returns null on any network/parse failure (caller
+     * falls back to the static list); empty list means Overpass genuinely found nothing nearby.
+     */
+    suspend fun nearby(lat: Double, lon: Double, radiusMeters: Int = 1500, limit: Int = 5): List<Place>? =
+        withContext(Dispatchers.IO) {
+            val query = "[out:json][timeout:10];" +
+                "(node[\"name\"][\"amenity\"](around:$radiusMeters,$lat,$lon);" +
+                "node[\"name\"][\"shop\"](around:$radiusMeters,$lat,$lon);" +
+                "node[\"name\"][\"railway\"=\"station\"](around:$radiusMeters,$lat,$lon);" +
+                "node[\"name\"][\"tourism\"](around:$radiusMeters,$lat,$lon););" +
+                "out body ${limit * 6};"
+            val url = "https://overpass-api.de/api/interpreter?data=${URLEncoder.encode(query, "UTF-8")}"
+            val body = fetch(url, readTimeoutMs = 12000) ?: return@withContext null
+            val here = doubleArrayOf(lat, lon)
+            val places = runCatching { parseOverpass(body) }
+                .onFailure { Log.w(TAG, "Failed to parse Overpass response", it) }
+                .getOrNull()
+                ?.sortedBy { haversineMeters(here, doubleArrayOf(it.lat!!, it.lng!!)) }
+                ?.take(limit)
+            Log.i(TAG, "Nearby @ $lat,$lon -> ${places?.size ?: "parse failed"} result(s)")
+            places
+        }
+
+    private fun parseOverpass(body: String): List<Place> {
+        val elements = JSONObject(body).optJSONArray("elements") ?: JSONArray()
+        val places = mutableListOf<Place>()
+        for (i in 0 until elements.length()) {
+            val el = elements.optJSONObject(i) ?: continue
+            val tags = el.optJSONObject("tags") ?: continue
+            val name = tags.optString("name").takeIf { it.isNotBlank() } ?: continue
+            val elLat = el.optDouble("lat").takeUnless { it.isNaN() } ?: continue
+            val elLon = el.optDouble("lon").takeUnless { it.isNaN() } ?: continue
+            val kind = tags.optString("amenity").takeIf { it.isNotBlank() }
+                ?: tags.optString("shop").takeIf { it.isNotBlank() }
+                ?: tags.optString("tourism").takeIf { it.isNotBlank() }
+                ?: "Nearby"
+            places.add(Place(name, kind.replace('_', ' ').replaceFirstChar { it.uppercase() }, elLat, elLon))
+        }
+        return places
+    }
+
+    private fun fetch(url: String, readTimeoutMs: Int = 5000): String? {
         val conn = URL(url).openConnection() as? HttpURLConnection ?: return null
         return try {
             conn.connectTimeout = 5000
-            conn.readTimeout = 5000
+            conn.readTimeout = readTimeoutMs
             conn.requestMethod = "GET"
             val code = conn.responseCode
             if (code != 200) {
-                Log.w(TAG, "Photon GET $url -> HTTP $code")
+                Log.w(TAG, "GET $url -> HTTP $code")
                 null
             } else {
                 conn.inputStream.bufferedReader().use { it.readText() }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Photon GET $url failed: ${e.message}")
+            Log.w(TAG, "GET $url failed: ${e.message}")
             null
         } finally {
             conn.disconnect()

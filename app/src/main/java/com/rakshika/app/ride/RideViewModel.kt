@@ -9,6 +9,7 @@ import com.rakshika.app.alerts.ContactsStore
 import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.ContactStatus
 import com.rakshika.app.geo.geoPointAt
+import com.rakshika.app.geo.remainingGeoPath
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.location.DeviceLocation
@@ -17,6 +18,7 @@ import com.rakshika.app.rag.SafetyDatasets
 import com.rakshika.app.routing.ValhallaRouting
 import com.rakshika.app.search.PlaceSearch
 import com.rakshika.app.ui.mapkit.ROUTE_B
+import com.rakshika.app.voice.Narrator
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -33,6 +35,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = RagRouteEngine()
     private val live = LiveShareRepository(viewModelScope)
     private val contactsStore = ContactsStore(app)
+    private val narrator = Narrator(app)
     private var rideJob: Job? = null
     private var assessJob: Job? = null
     private var searchJob: Job? = null
@@ -49,11 +52,23 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         val loc = DeviceLocation.lastKnown(getApplication())
         if (loc != null) {
             originGeo = loc
+            // Anchors every mock-map fallback path (used whenever live routing has no real
+            // geometry) onto the device's actual position, instead of the fixed MG Road demo spot.
+            LiveShareConfig.setLiveOrigin(loc[0], loc[1])
             Log.i(TAG, "Using device location for search/routing: ${loc[0]},${loc[1]}")
+            loadNearby(loc[0], loc[1])
         } else {
             Log.i(TAG, "No device location available (permission denied or no fix yet) — using the demo default origin")
         }
         _state.update { it.copy(usingDeviceLocation = loc != null) }
+    }
+
+    /** Fetches real named places actually near the device, to replace the static "Nearby" fallback list. */
+    private fun loadNearby(lat: Double, lon: Double) {
+        viewModelScope.launch {
+            val results = PlaceSearch.nearby(lat, lon)
+            if (results != null) _state.update { it.copy(nearbyResults = results) }
+        }
     }
 
     /** Debounced free-text place search via Photon (OSM geocoder), biased to [originGeo]. */
@@ -88,13 +103,23 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectRoute(safe: Boolean) {
         _state.update { it.copy(safeSelected = safe) }
+        val route = _state.value.routes?.let { if (safe) it.safe else it.fast } ?: return
+        narrator.say("Switched to the ${route.label.lowercase()} route, safety score ${route.safetyScore} out of 100.")
     }
 
     fun backToSearch() {
         rideJob?.cancel()
         assessJob?.cancel()
         live.endTrip()
-        _state.update { RideState(query = it.query, selectedDatasetId = it.selectedDatasetId) }
+        narrator.stop()
+        _state.update {
+            RideState(
+                query = it.query,
+                selectedDatasetId = it.selectedDatasetId,
+                nearbyResults = it.nearbyResults,
+                usingDeviceLocation = it.usingDeviceLocation
+            )
+        }
     }
 
     private fun currentChoice() = _state.value.routes?.let {
@@ -132,6 +157,8 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
 
             val result = ragDeferred.await()
             val geoRoutes = geoDeferred.await()
+
+            narrator.say(result.recommendationText)
 
             _state.update {
                 it.copy(
@@ -172,11 +199,76 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
                 contactsStore.recipients(),
                 AlertMessages.rideStarted(destination.name, chosen.label, chosen.minutes, d[0], d[1])
             )
+            narrator.say(
+                "Starting your ride on the ${chosen.label.lowercase()} route to ${destination.name}, " +
+                    "about ${chosen.minutes} minutes away. Amma and Rohan have been notified."
+            )
         }
 
+        runRideLoop(chosen, path)
+    }
+
+    /**
+     * Recalculates the route from wherever the marker currently is and resumes the ride on the
+     * new path. With live destination coordinates this asks Valhalla for a fresh route starting
+     * at the marker's position; without them (a coordinate-less demo destination) it falls back
+     * to just the remaining stretch of the current mock path, re-based to progress 0.
+     */
+    fun reroute() {
+        val routes = _state.value.routes ?: return
+        val destination = _state.value.destination ?: return
+        if (_state.value.rerouting) return
+
+        val fromPath = chosenGeoPath()
+        val progress = _state.value.rideProgress
+        val here = geoPointAt(fromPath, progress)
+
+        narrator.say("Recalculating your route from your current location.")
+        _state.update { it.copy(rerouting = true) }
+
+        viewModelScope.launch {
+            val destLat = destination.lat
+            val destLng = destination.lng
+            val geoRoutes = if (destLat != null && destLng != null) {
+                Log.i(TAG, "Rerouting live from ${here[0]},${here[1]} -> $destLat,$destLng")
+                ValhallaRouting.findRoutes(here[0], here[1], destLat, destLng)
+            } else {
+                Log.w(TAG, "Rerouting \"${destination.name}\" without live coordinates — trimming the mock path instead")
+                null
+            }
+
+            val newRoutes = if (geoRoutes != null) {
+                RoutePair(fast = routes.fast.withRoutedGeometry(geoRoutes), safe = routes.safe.withRoutedGeometry(geoRoutes))
+            } else {
+                RoutePair(
+                    fast = routes.fast.copy(geoPath = remainingGeoPath(routes.fast.resolvedGeoPath(), progress)),
+                    safe = routes.safe.copy(geoPath = remainingGeoPath(routes.safe.resolvedGeoPath(), progress))
+                )
+            }
+            val newChosen = if (_state.value.safeSelected) newRoutes.safe else newRoutes.fast
+            val newPath = newChosen.resolvedGeoPath()
+
+            rideJob?.cancel()
+            _state.update {
+                it.copy(
+                    routes = newRoutes,
+                    rideProgress = 0f,
+                    etaMinutesLeft = newChosen.minutes,
+                    rerouting = false
+                )
+            }
+            live.startTrip(ORIGIN, destination, newChosen, _state.value.safeSelected, newPath, newChosen.minutes)
+            narrator.say("Rerouted via the ${newChosen.label.lowercase()}, about ${newChosen.minutes} minutes to go.")
+            runRideLoop(newChosen, newPath)
+        }
+    }
+
+    /** Walks the dot along [path] in real time, notifying contacts/Firebase along the way, then marks arrival. */
+    private fun runRideLoop(chosen: RouteOption, path: List<DoubleArray>) {
         rideJob = viewModelScope.launch {
             val totalSteps = 90
-            val stepMs = 120L
+            // The whole ride is compressed to RIDE_DURATION_MS of screen time regardless of the mocked ETA.
+            val stepMs = RIDE_DURATION_MS / totalSteps
             var step = 0
             while (isActive && step <= totalSteps) {
                 val progress = step / totalSteps.toFloat()
@@ -194,6 +286,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             live.arrive()
             _state.value.destination?.let {
                 SmsAlerts.send(getApplication(), contactsStore.recipients(), AlertMessages.arrived(it.name))
+                narrator.say("You have arrived safely at ${it.name}. Amma and Rohan have been notified.")
             }
             _state.update { it.copy(step = RideStep.ARRIVED, rideProgress = 1f, etaMinutesLeft = 0) }
         }
@@ -209,6 +302,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             contactsStore.recipients(),
             AlertMessages.sosRide(destination, here[0], here[1])
         )
+        narrator.say("S.O.S. sent. Rohan and Amma have been notified with your current location.")
         _state.update { it.copy(sosActive = true, contactRohan = ContactStatus.RESPONDING) }
     }
 
@@ -216,15 +310,26 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         rideJob?.cancel()
         assessJob?.cancel()
         live.endTrip()
-        _state.update { RideState(selectedDatasetId = it.selectedDatasetId) }
+        narrator.stop()
+        _state.update {
+            RideState(
+                selectedDatasetId = it.selectedDatasetId,
+                nearbyResults = it.nearbyResults,
+                usingDeviceLocation = it.usingDeviceLocation
+            )
+        }
     }
 
     override fun onCleared() {
         rideJob?.cancel()
         assessJob?.cancel()
         searchJob?.cancel()
+        narrator.shutdown()
         super.onCleared()
     }
 
-    private companion object { const val TAG = "RideViewModel" }
+    private companion object {
+        const val TAG = "RideViewModel"
+        const val RIDE_DURATION_MS = 2 * 60 * 1000L
+    }
 }
