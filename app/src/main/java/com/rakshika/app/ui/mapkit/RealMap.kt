@@ -1,6 +1,7 @@
 package com.rakshika.app.ui.mapkit
 
 import android.content.Context
+import android.view.ViewTreeObserver
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -18,6 +19,27 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+
+/**
+ * Runs [block] once this MapView actually has pixels — `zoomToBoundingBox`/`setZoom` need real
+ * width/height to compute a sane camera, and inside a Compose `AndroidView` a plain `post {}`
+ * can fire before the first layout pass, producing a bogus zoom (map looks blank or zoomed
+ * out to nothing).
+ */
+private fun MapView.onceLaidOut(block: MapView.() -> Unit) {
+    if (width > 0 && height > 0) {
+        block()
+        return
+    }
+    viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+        override fun onGlobalLayout() {
+            if (width > 0 && height > 0) {
+                viewTreeObserver.removeOnGlobalLayoutListener(this)
+                block()
+            }
+        }
+    })
+}
 
 private var osmdroidInitialized = false
 private fun initOsmdroid(context: Context) {
@@ -108,14 +130,14 @@ fun RealMap(
 
             if (!fitted[0] && zoomToCurrentOnStart && current != null) {
                 val point = GeoPoint(current[0], current[1])
-                mv.post {
-                    mv.controller.setZoom(18.0)
-                    mv.controller.setCenter(point)
+                mv.onceLaidOut {
+                    controller.setZoom(18.0)
+                    controller.setCenter(point)
                 }
                 fitted[0] = true
             } else if (!fitted[0] && fitPts != null) {
                 val box = BoundingBox.fromGeoPoints(fitPts).increaseByScale(1.5f)
-                mv.post { mv.zoomToBoundingBox(box, false) }
+                mv.onceLaidOut { zoomToBoundingBox(box, false) }
                 fitted[0] = true
             }
 
