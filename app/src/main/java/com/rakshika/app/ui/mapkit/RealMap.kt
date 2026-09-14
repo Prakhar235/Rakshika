@@ -1,7 +1,6 @@
 package com.rakshika.app.ui.mapkit
 
 import android.content.Context
-import android.view.ViewTreeObserver
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -22,23 +21,17 @@ import org.osmdroid.views.overlay.Polyline
 
 /**
  * Runs [block] once this MapView actually has pixels — `zoomToBoundingBox`/`setZoom` need real
- * width/height to compute a sane camera, and inside a Compose `AndroidView` a plain `post {}`
- * can fire before the first layout pass, producing a bogus zoom (map looks blank or zoomed
- * out to nothing).
+ * width/height to compute a sane camera. `View.post` is used (not `viewTreeObserver`) because
+ * it's safe to call before the view is attached to a window — it just queues the Runnable for
+ * once attachment/layout happens — whereas a `ViewTreeObserver` fetched pre-attach can be a
+ * throwaway instance whose listeners never fire once the real one takes over at attach time.
  */
 private fun MapView.onceLaidOut(block: MapView.() -> Unit) {
     if (width > 0 && height > 0) {
         block()
-        return
+    } else {
+        post { onceLaidOut(block) }
     }
-    viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-        override fun onGlobalLayout() {
-            if (width > 0 && height > 0) {
-                viewTreeObserver.removeOnGlobalLayoutListener(this)
-                block()
-            }
-        }
-    })
 }
 
 private var osmdroidInitialized = false
