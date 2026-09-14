@@ -9,7 +9,6 @@ import com.rakshika.app.alerts.ContactsStore
 import com.rakshika.app.alerts.SmsAlerts
 import com.rakshika.app.data.model.ContactStatus
 import com.rakshika.app.geo.geoPointAt
-import com.rakshika.app.geo.remainingGeoPath
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.location.DeviceLocation
@@ -237,14 +236,12 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
                 null
             }
 
-            val newRoutes = if (geoRoutes != null) {
-                RoutePair(fast = routes.fast.withRoutedGeometry(geoRoutes), safe = routes.safe.withRoutedGeometry(geoRoutes))
-            } else {
-                RoutePair(
-                    fast = routes.fast.copy(geoPath = remainingGeoPath(routes.fast.resolvedGeoPath(), progress)),
-                    safe = routes.safe.copy(geoPath = remainingGeoPath(routes.safe.resolvedGeoPath(), progress))
-                )
-            }
+            // Both lines are always redrawn from `here`: a corridor Valhalla actually found gets
+            // fresh routed geometry, any other corridor falls back to trimming its own current path.
+            val newRoutes = RoutePair(
+                fast = routes.fast.rerouted(geoRoutes, progress),
+                safe = routes.safe.rerouted(geoRoutes, progress)
+            )
             val newChosen = if (_state.value.safeSelected) newRoutes.safe else newRoutes.fast
             val newPath = newChosen.resolvedGeoPath()
 

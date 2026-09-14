@@ -1,6 +1,7 @@
 package com.rakshika.app.ride
 
 import com.rakshika.app.data.model.ContactStatus
+import com.rakshika.app.geo.remainingGeoPath
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.rag.RagResult
 import com.rakshika.app.rag.RouteAssessment
@@ -49,17 +50,24 @@ data class RouteOption(
 /** The real geo path for this option: live road-following polyline when found, else the fixed mock-map stand-in. */
 fun RouteOption.resolvedGeoPath(): List<DoubleArray> = geoPath ?: LiveShareConfig.toGeoPath(mockPathFor(corridor))
 
-/** Re-applies a freshly recalculated route (a mid-ride reroute) onto this option, keeping its safety scoring. */
-fun RouteOption.withRoutedGeometry(geoRoutes: RoutingResult?): RouteOption {
+/**
+ * Re-bases this option onto wherever the marker currently is (a mid-ride reroute), keeping its
+ * safety scoring. Uses [geoRoutes]' matching corridor when Valhalla found one; otherwise — no
+ * live alternate for this corridor, or no live routing at all — falls back to just the remaining
+ * stretch of this option's own current path, so every route is always redrawn from the marker's
+ * position, never left showing a stale line back to the original start.
+ */
+fun RouteOption.rerouted(geoRoutes: RoutingResult?, progress: Float): RouteOption {
     val real = when (corridor) {
         RouteCorridor.MAIN_ROAD -> geoRoutes?.mainRoad
         RouteCorridor.BACK_LANE -> geoRoutes?.backLane
         RouteCorridor.BOTH -> null
     }
-    return if (real == null) this else copy(
-        minutes = (real.durationSeconds / 60).roundToInt().coerceAtLeast(1),
-        geoPath = real.points
-    )
+    return if (real != null) {
+        copy(minutes = (real.durationSeconds / 60).roundToInt().coerceAtLeast(1), geoPath = real.points)
+    } else {
+        copy(geoPath = remainingGeoPath(resolvedGeoPath(), progress))
+    }
 }
 
 /** [safe] is the RAG-recommended corridor, [fast] is the other one (kept for screen wiring). */
