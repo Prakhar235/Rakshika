@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import com.rakshika.app.rag.RouteCorridor
+import com.rakshika.app.routing.RouteCorridor
 
 /**
  * A drawn (non-Google-Maps) mock street grid shared by the narrated demo and the

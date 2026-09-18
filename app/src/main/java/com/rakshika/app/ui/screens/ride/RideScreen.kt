@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Dataset
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
@@ -50,9 +48,7 @@ import com.rakshika.app.geo.pathLengthMeters
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareStatus
 import com.rakshika.app.location.DeviceLocation
-import com.rakshika.app.rag.RagResult
-import com.rakshika.app.rag.RouteEvidence
-import com.rakshika.app.rag.SafetyDatasets
+import com.rakshika.app.routing.RouteFact
 import com.rakshika.app.ride.ORIGIN
 import com.rakshika.app.ride.Place
 import com.rakshika.app.ride.RideState
@@ -75,8 +71,7 @@ fun RideScreen(viewModel: RideViewModel = viewModel()) {
     Column(modifier = Modifier.fillMaxSize()) {
         when (state.step) {
             RideStep.SEARCH -> SearchStep(
-                state, viewModel::updateQuery, viewModel::selectDestination,
-                viewModel::selectDataset, viewModel::refreshDeviceLocation
+                state, viewModel::updateQuery, viewModel::selectDestination, viewModel::refreshDeviceLocation
             )
             RideStep.ROUTES -> RoutesStep(state, viewModel::selectRoute, viewModel::backToSearch, viewModel::startRide)
             RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos, viewModel::reroute)
@@ -92,7 +87,6 @@ private fun SearchStep(
     state: RideState,
     onQuery: (String) -> Unit,
     onSelect: (Place) -> Unit,
-    onSelectDataset: (String) -> Unit,
     onLocationReady: () -> Unit
 ) {
     val context = LocalContext.current
@@ -126,14 +120,6 @@ private fun SearchStep(
                 Text("${ORIGIN.name} · ${ORIGIN.area}", style = MaterialTheme.typography.bodyMedium)
             }
         }
-
-        Spacer(Modifier.height(12.dp))
-
-        DatasetSelector(
-            selectedId = state.selectedDatasetId,
-            assessing = state.assessing,
-            onSelect = onSelectDataset
-        )
 
         Spacer(Modifier.height(12.dp))
 
@@ -201,56 +187,6 @@ private fun PlaceRow(place: Place, onClick: () -> Unit) {
             Text(place.name, style = MaterialTheme.typography.bodyMedium)
             Text(place.area, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         }
-    }
-}
-
-@Composable
-private fun DatasetSelector(selectedId: String, assessing: Boolean, onSelect: (String) -> Unit) {
-    val selected = SafetyDatasets.byId(selectedId)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(SurfaceCard)
-            .border(0.5.dp, BorderHairline, RoundedCornerShape(12.dp))
-            .padding(12.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Dataset, contentDescription = null, tint = RakshikaRed, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Conditions dataset", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            Spacer(Modifier.weight(1f))
-            if (assessing) {
-                CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
-                Spacer(Modifier.width(6.dp))
-                Text("embedding · retrieving", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SafetyDatasets.ALL.forEach { ds ->
-                val isSel = ds.id == selectedId
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(100.dp))
-                        .background(if (isSel) RakshikaRed else SurfacePage)
-                        .border(0.5.dp, if (isSel) RakshikaRed else BorderHairline, RoundedCornerShape(100.dp))
-                        .clickable { onSelect(ds.id) }
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        ds.name,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isSel) Color.White else TextSecondary
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(selected.blurb, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }
 }
 
@@ -348,7 +284,7 @@ private fun RoutesStep(
             RouteCard(routes.safe, selected = state.safeSelected, accent = RakshikaGreen) { onSelectRoute(true) }
             RouteCard(routes.fast, selected = !state.safeSelected, accent = RakshikaRed) { onSelectRoute(false) }
 
-            if (chosen.evidence.isNotEmpty()) EvidencePanel(chosen)
+            if (chosen.facts.isNotEmpty()) RouteFactsPanel(chosen)
 
             if (!state.safeSelected) {
                 Text(
@@ -359,7 +295,7 @@ private fun RoutesStep(
                 )
             }
 
-            state.rag?.let { RagFooter(it) }
+            RouteSummaryFooter(routes.summary)
 
             Button(
                 onClick = onStart,
@@ -465,7 +401,7 @@ private fun RouteSourceBadge(real: Boolean, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EvidencePanel(route: RouteOption) {
+private fun RouteFactsPanel(route: RouteOption) {
     var expanded by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier
@@ -478,7 +414,7 @@ private fun EvidencePanel(route: RouteOption) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Why — ${route.evidence.size} retrieved notes",
+                "Why — ${route.facts.size} facts from Google Directions",
                 style = MaterialTheme.typography.labelMedium,
                 color = TextPrimary
             )
@@ -492,32 +428,22 @@ private fun EvidencePanel(route: RouteOption) {
         }
         if (expanded) {
             Spacer(Modifier.height(8.dp))
-            route.evidence.forEach { ev -> EvidenceRow(ev) }
+            route.facts.forEach { fact -> RouteFactRow(fact) }
         }
     }
 }
 
 @Composable
-private fun EvidenceRow(ev: RouteEvidence) {
-    val bad = ev.contribution < 0f
+private fun RouteFactRow(fact: RouteFact) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-        Text(if (bad) "⚠" else "✓", color = if (bad) RakshikaAmber else RakshikaGreen)
+        Text(if (fact.positive) "✓" else "⚠", color = if (fact.positive) RakshikaGreen else RakshikaAmber)
         Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(ev.doc.text, style = MaterialTheme.typography.labelSmall, color = TextPrimary)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "${ev.doc.kind.name.lowercase().replace('_', ' ')} · sim ${"%.2f".format(ev.similarity)} · " +
-                    "${if (bad) "" else "+"}${"%.1f".format(ev.contribution)} pts",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary
-            )
-        }
+        Text(fact.text, style = MaterialTheme.typography.labelSmall, color = TextPrimary, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun RagFooter(rag: RagResult) {
+private fun RouteSummaryFooter(summary: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -526,13 +452,7 @@ private fun RagFooter(rag: RagResult) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(rag.recommendationText, style = MaterialTheme.typography.labelSmall, color = TextPrimary)
-        Text(
-            "On-device RAG · ${rag.datasetName} · indexed ${rag.indexedDocs} notes · " +
-                "retrieved ${rag.retrievedDocs} · dim ${rag.embeddingDim} · top-k ${rag.topK}",
-            style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary
-        )
+        Text(summary, style = MaterialTheme.typography.labelSmall, color = TextPrimary)
     }
 }
 

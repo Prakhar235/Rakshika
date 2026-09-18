@@ -12,14 +12,12 @@ import com.rakshika.app.geo.geoPointAt
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.location.DeviceLocation
-import com.rakshika.app.rag.RagRouteEngine
-import com.rakshika.app.rag.SafetyDatasets
-import com.rakshika.app.routing.ValhallaRouting
+import com.rakshika.app.routing.GoogleRouting
+import com.rakshika.app.routing.RouteScoring
 import com.rakshika.app.search.PlaceSearch
 import com.rakshika.app.ui.mapkit.ROUTE_B
 import com.rakshika.app.voice.Narrator
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +29,6 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val _state = MutableStateFlow(RideState())
     val state: StateFlow<RideState> = _state
 
-    private val engine = RagRouteEngine()
     private val live = LiveShareRepository(viewModelScope)
     private val contactsStore = ContactsStore(app)
     private val narrator = Narrator(app)
@@ -70,7 +67,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Debounced free-text place search via Photon (OSM geocoder), biased to [originGeo]. */
+    /** Debounced free-text place search via the Places API, biased to [originGeo]. */
     fun updateQuery(text: String) {
         _state.update { it.copy(query = text) }
         searchJob?.cancel()
@@ -86,13 +83,6 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             val results = PlaceSearch.search(text, originGeo[0], originGeo[1])
             if (isActive) _state.update { it.copy(searchResults = results, searching = false) }
         }
-    }
-
-    /** Pick which safety dataset the on-device RAG retrieves from; re-runs live if a route is up. */
-    fun selectDataset(id: String) {
-        if (_state.value.selectedDatasetId == id) return
-        _state.update { it.copy(selectedDatasetId = id) }
-        _state.value.destination?.let { runAssessment(it, keepStep = true) }
     }
 
     fun selectDestination(place: Place) {
@@ -114,7 +104,6 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             RideState(
                 query = it.query,
-                selectedDatasetId = it.selectedDatasetId,
                 nearbyResults = it.nearbyResults,
                 usingDeviceLocation = it.usingDeviceLocation
             )
@@ -133,38 +122,28 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         assessJob?.cancel()
         assessJob = viewModelScope.launch {
             _state.update { it.copy(assessing = true) }
-            val dataset = SafetyDatasets.byId(_state.value.selectedDatasetId)
 
-            // The on-device RAG safety scoring and the real-road lookup run concurrently —
-            // one's a small delay for UX, the other a real network call that may fail or be slow.
-            val ragDeferred = async {
-                // Small pause so the "embedding query · retrieving notes" step is visible.
-                delay(if (keepStep) 280L else 460L)
-                engine.assess("${ORIGIN.name} ${ORIGIN.area}", "${place.name} ${place.area}", dataset)
-            }
-            val geoDeferred = async {
-                val lat = place.lat
-                val lng = place.lng
-                if (lat != null && lng != null) {
-                    Log.i(TAG, "Requesting live routes for \"${place.name}\" @ $lat,$lng")
-                    ValhallaRouting.findRoutes(originGeo[0], originGeo[1], lat, lng)
-                } else {
-                    Log.w(TAG, "\"${place.name}\" has no coordinates — skipping live routing, using the mock route")
-                    null
-                }
+            val lat = place.lat
+            val lng = place.lng
+            val geoRoutes = if (lat != null && lng != null) {
+                Log.i(TAG, "Requesting live routes for \"${place.name}\" @ $lat,$lng")
+                GoogleRouting.findRoutes(originGeo[0], originGeo[1], lat, lng)
+            } else {
+                Log.w(TAG, "\"${place.name}\" has no coordinates — skipping live routing, using the mock route")
+                null
             }
 
-            val result = ragDeferred.await()
-            val geoRoutes = geoDeferred.await()
+            // Scoring is pure math over the Directions response just fetched — no fictional corpus to retrieve from.
+            val comparison = RouteScoring.compare(geoRoutes)
+            val routes = routePairFrom(comparison, geoRoutes)
 
-            narrator.say(result.recommendationText)
+            narrator.say(routes.summary)
 
             _state.update {
                 it.copy(
                     step = if (keepStep) it.step else RideStep.ROUTES,
                     assessing = false,
-                    rag = result,
-                    routes = routePairFrom(result, geoRoutes),
+                    routes = routes,
                     safeSelected = true
                 )
             }
@@ -230,7 +209,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             val destLng = destination.lng
             val geoRoutes = if (destLat != null && destLng != null) {
                 Log.i(TAG, "Rerouting live from ${here[0]},${here[1]} -> $destLat,$destLng")
-                ValhallaRouting.findRoutes(here[0], here[1], destLat, destLng)
+                GoogleRouting.findRoutes(here[0], here[1], destLat, destLng)
             } else {
                 Log.w(TAG, "Rerouting \"${destination.name}\" without live coordinates — trimming the mock path instead")
                 null
@@ -240,7 +219,8 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             // fresh routed geometry, any other corridor falls back to trimming its own current path.
             val newRoutes = RoutePair(
                 fast = routes.fast.rerouted(geoRoutes, progress),
-                safe = routes.safe.rerouted(geoRoutes, progress)
+                safe = routes.safe.rerouted(geoRoutes, progress),
+                summary = routes.summary
             )
             val newChosen = if (_state.value.safeSelected) newRoutes.safe else newRoutes.fast
             val newPath = newChosen.resolvedGeoPath()
@@ -310,7 +290,6 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         narrator.stop()
         _state.update {
             RideState(
-                selectedDatasetId = it.selectedDatasetId,
                 nearbyResults = it.nearbyResults,
                 usingDeviceLocation = it.usingDeviceLocation
             )
