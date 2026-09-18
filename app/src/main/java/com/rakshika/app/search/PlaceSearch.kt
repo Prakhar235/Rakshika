@@ -1,8 +1,10 @@
 package com.rakshika.app.search
 
+import android.content.Context
 import android.util.Log
 import com.rakshika.app.BuildConfig
 import com.rakshika.app.geo.haversineMeters
+import com.rakshika.app.net.GoogleApiHeaders
 import com.rakshika.app.ride.Place
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -27,13 +29,13 @@ object PlaceSearch {
     private const val SEARCH_RADIUS_METERS = 15000
 
     /** Returns null on any network failure (caller should fall back to a local list); empty list means no matches. */
-    suspend fun search(query: String, lat: Double, lon: Double, limit: Int = 6): List<Place>? =
+    suspend fun search(context: Context, query: String, lat: Double, lon: Double, limit: Int = 6): List<Place>? =
         withContext(Dispatchers.IO) {
             if (query.isBlank()) return@withContext emptyList()
             val url = "https://maps.googleapis.com/maps/api/place/textsearch/json" +
                 "?query=${URLEncoder.encode(query, "UTF-8")}" +
                 "&location=$lat,$lon&radius=$SEARCH_RADIUS_METERS&key=${BuildConfig.MAPS_API_KEY}"
-            val body = fetch(url) ?: return@withContext null
+            val body = fetch(url, context) ?: return@withContext null
             val places = runCatching { parse(body, limit) }
                 .onFailure { Log.w(TAG, "Failed to parse Places textsearch response for \"$query\"", it) }
                 .getOrNull()
@@ -48,11 +50,11 @@ object PlaceSearch {
      * spot. Returns null on any network/parse failure (caller falls back to the static list);
      * empty list means the API genuinely found nothing nearby.
      */
-    suspend fun nearby(lat: Double, lon: Double, radiusMeters: Int = 1500, limit: Int = 5): List<Place>? =
+    suspend fun nearby(context: Context, lat: Double, lon: Double, radiusMeters: Int = 1500, limit: Int = 5): List<Place>? =
         withContext(Dispatchers.IO) {
             val url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json" +
                 "?location=$lat,$lon&radius=$radiusMeters&key=${BuildConfig.MAPS_API_KEY}"
-            val body = fetch(url) ?: return@withContext null
+            val body = fetch(url, context) ?: return@withContext null
             val here = doubleArrayOf(lat, lon)
             val places = runCatching { parse(body, limit * 6) }
                 .onFailure { Log.w(TAG, "Failed to parse Places nearbysearch response", it) }
@@ -63,12 +65,13 @@ object PlaceSearch {
             places
         }
 
-    private fun fetch(url: String, readTimeoutMs: Int = 6000): String? {
+    private fun fetch(url: String, context: Context, readTimeoutMs: Int = 6000): String? {
         val conn = URL(url).openConnection() as? HttpURLConnection ?: return null
         return try {
             conn.connectTimeout = 5000
             conn.readTimeout = readTimeoutMs
             conn.requestMethod = "GET"
+            GoogleApiHeaders.apply(conn, context)
             val code = conn.responseCode
             if (code != 200) {
                 Log.w(TAG, "GET $url -> HTTP $code")

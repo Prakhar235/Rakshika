@@ -1,7 +1,9 @@
 package com.rakshika.app.routing
 
+import android.content.Context
 import android.util.Log
 import com.rakshika.app.BuildConfig
+import com.rakshika.app.net.GoogleApiHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -44,12 +46,12 @@ object GoogleRouting {
     private const val MAIN_ROAD_SPEED_KMH = 25.0
 
     /** Returns null when routing couldn't be reached or found no route at all — check Logcat tag "GoogleRouting" why. */
-    suspend fun findRoutes(originLat: Double, originLng: Double, destLat: Double, destLng: Double): RoutingResult? =
+    suspend fun findRoutes(context: Context, originLat: Double, originLng: Double, destLat: Double, destLng: Double): RoutingResult? =
         withContext(Dispatchers.IO) {
             val url = "$URL_STR?origin=$originLat,$originLng&destination=$destLat,$destLng" +
                 "&alternatives=true&key=${BuildConfig.MAPS_API_KEY}"
 
-            val body = get(url) ?: return@withContext null
+            val body = get(url, context) ?: return@withContext null
             val routes = runCatching { parse(body) }
                 .onFailure { Log.w(TAG, "Failed to parse Directions response", it) }
                 .getOrNull()
@@ -73,12 +75,13 @@ object GoogleRouting {
             RoutingResult(mainRoad = sorted.first(), backLane = sorted.last())
         }
 
-    private fun get(url: String): String? {
+    private fun get(url: String, context: Context): String? {
         val conn = URL(url).openConnection() as? HttpURLConnection ?: return null
         return try {
             conn.connectTimeout = 6000
             conn.readTimeout = 6000
             conn.requestMethod = "GET"
+            GoogleApiHeaders.apply(conn, context)
             val code = conn.responseCode
             if (code != 200) {
                 Log.w(TAG, "GET $url -> HTTP $code")

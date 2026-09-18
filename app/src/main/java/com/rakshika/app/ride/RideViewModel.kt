@@ -62,7 +62,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     /** Fetches real named places actually near the device, to replace the static "Nearby" fallback list. */
     private fun loadNearby(lat: Double, lon: Double) {
         viewModelScope.launch {
-            val results = PlaceSearch.nearby(lat, lon)
+            val results = PlaceSearch.nearby(getApplication(), lat, lon)
             if (results != null) _state.update { it.copy(nearbyResults = results) }
         }
     }
@@ -80,7 +80,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(searching = true, searchResults = null) }
         searchJob = viewModelScope.launch {
             delay(300)
-            val results = PlaceSearch.search(text, originGeo[0], originGeo[1])
+            val results = PlaceSearch.search(getApplication(), text, originGeo[0], originGeo[1])
             if (isActive) _state.update { it.copy(searchResults = results, searching = false) }
         }
     }
@@ -127,7 +127,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             val lng = place.lng
             val geoRoutes = if (lat != null && lng != null) {
                 Log.i(TAG, "Requesting live routes for \"${place.name}\" @ $lat,$lng")
-                GoogleRouting.findRoutes(originGeo[0], originGeo[1], lat, lng)
+                GoogleRouting.findRoutes(getApplication(), originGeo[0], originGeo[1], lat, lng)
             } else {
                 Log.w(TAG, "\"${place.name}\" has no coordinates — skipping live routing, using the mock route")
                 null
@@ -209,7 +209,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
             val destLng = destination.lng
             val geoRoutes = if (destLat != null && destLng != null) {
                 Log.i(TAG, "Rerouting live from ${here[0]},${here[1]} -> $destLat,$destLng")
-                GoogleRouting.findRoutes(here[0], here[1], destLat, destLng)
+                GoogleRouting.findRoutes(getApplication(), here[0], here[1], destLat, destLng)
             } else {
                 Log.w(TAG, "Rerouting \"${destination.name}\" without live coordinates — trimming the mock path instead")
                 null
