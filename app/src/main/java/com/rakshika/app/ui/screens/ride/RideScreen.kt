@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -351,10 +352,32 @@ private fun RouteCard(route: RouteOption, selected: Boolean, accent: Color, onCl
             Icon(Icons.Filled.Shield, contentDescription = null, tint = accent, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(5.dp))
             Text("Safety score ${route.safetyScore}/100", style = MaterialTheme.typography.labelSmall, color = accent)
+            if (route.scoredByModel) {
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(accent.copy(alpha = 0.12f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("AI risk score", style = MaterialTheme.typography.labelSmall, color = accent)
+                }
+            }
             Spacer(Modifier.weight(1f))
             SafetyMeter(route.safetyScore, accent)
         }
-        if (route.reasons.isNotEmpty()) {
+        // When the model scored this route, its own explanation is the headline line — the
+        // heuristic facts (still in route.facts/reasons) stay available in the "Why" panel below
+        // rather than being folded in here too and diluting the model's actual answer.
+        if (route.modelReason != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                route.modelReason,
+                style = MaterialTheme.typography.labelSmall,
+                fontStyle = FontStyle.Italic,
+                color = TextPrimary
+            )
+        } else if (route.reasons.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Text(route.reasons.joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = TextSecondary)
         }

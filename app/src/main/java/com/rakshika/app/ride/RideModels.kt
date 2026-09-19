@@ -48,7 +48,11 @@ data class RouteOption(
     /** Real, per-corridor facts from the live Directions response behind [safetyScore] — see [RouteScoring]. */
     val facts: List<RouteFact> = emptyList(),
     /** The routing service's real road-following polyline for this corridor, `[lat, lng]` pairs — null if none was found. */
-    val geoPath: List<DoubleArray>? = null
+    val geoPath: List<DoubleArray>? = null,
+    /** True when [safetyScore] is the model-predicted risk score rather than the local heuristic — see [RouteScoring.withModelScores]. */
+    val scoredByModel: Boolean = false,
+    /** The model's own explanation for [safetyScore] when [scoredByModel] is true — see [RouteScore.modelReason]. */
+    val modelReason: String? = null
 )
 
 /** The real geo path for this option: live road-following polyline when found, else the fixed mock-map stand-in. */
@@ -98,7 +102,9 @@ private fun RouteScore.toRouteOption(geoRoutes: RoutingResult?): RouteOption {
         safetyScore = safetyScore,
         corridor = corridor,
         facts = facts,
-        geoPath = real?.points
+        geoPath = real?.points,
+        scoredByModel = scoredByModel,
+        modelReason = modelReason
     )
 }
 

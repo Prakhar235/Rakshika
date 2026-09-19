@@ -20,10 +20,21 @@ data class RouteScore(
     val roadNames: String?,
     /** True when this score is grounded in a real Directions route; false means Directions found
      *  none for this corridor and the app is showing/scoring the offline mock path instead. */
-    val isLive: Boolean
+    val isLive: Boolean,
+    /** True when [safetyScore]/[facts] came from [com.rakshika.app.risk.OpenAiRiskScorer] rather
+     *  than the local heuristic below — see [RouteScoring.withModelScores]. */
+    val scoredByModel: Boolean = false,
+    /** The model's own one-sentence explanation for [safetyScore], verbatim from its response —
+     *  null unless [scoredByModel] is true. Kept separate from [facts] so the UI can show it as
+     *  its own line instead of folded into the heuristic facts list. */
+    val modelReason: String? = null
 )
 
 data class RouteComparison(val safe: RouteScore, val fast: RouteScore)
+
+/** One corridor's model-predicted score, same scale as [RouteScore.safetyScore] (1-99, higher =
+ *  safer) — see [com.rakshika.app.risk.OpenAiRiskScorer]. */
+data class ModelRiskScore(val corridorId: String, val safetyScore: Int, val reason: String)
 
 /**
  * Scores each corridor from the real Directions API data Google returned for the route just
@@ -44,11 +55,19 @@ object RouteScoring {
     private const val MAIN_ROAD_SPEED_KMH = 25.0
     private const val BASE_SCORE = 50.0
 
-    fun compare(routes: RoutingResult?): RouteComparison {
+    fun compare(routes: RoutingResult?): RouteComparison = finalize(rawScores(routes))
+
+    /**
+     * The per-corridor heuristic score/facts, before deciding which one is "safe" vs "fast" —
+     * this is the seam [RideViewModel][com.rakshika.app.ride.RideViewModel] uses to hand the same
+     * real Directions facts to [com.rakshika.app.risk.OpenAiRiskScorer] and, if that call
+     * succeeds, override the numbers below via [withModelScores] before calling [finalize].
+     */
+    fun rawScores(routes: RoutingResult?): Pair<RouteScore, RouteScore> {
         val mainRoute = routes?.mainRoad
         val backRoute = routes?.backLane
 
-        val (main, back) = when {
+        return when {
             mainRoute != null && backRoute != null -> compareLive(mainRoute, backRoute)
             mainRoute != null -> solo(RouteCorridor.MAIN_ROAD, "Main road", mainRoute) to
                 missing(RouteCorridor.BACK_LANE, "Back lane")
@@ -56,14 +75,37 @@ object RouteScoring {
                 solo(RouteCorridor.BACK_LANE, "Back lane", backRoute)
             else -> missing(RouteCorridor.MAIN_ROAD, "Main road") to missing(RouteCorridor.BACK_LANE, "Back lane")
         }
+    }
 
-        // Ties go to the main road — busier and easier to get help on.
+    /** Picks the higher-scoring corridor as "safe" (ties go to the main road — busier and easier
+     *  to get help on) and the other as "fast", from either heuristic or model-overridden scores. */
+    fun finalize(scores: Pair<RouteScore, RouteScore>): RouteComparison {
+        val (main, back) = scores
         val safe = if (back.safetyScore > main.safetyScore) back else main
         val fast = if (safe.corridor == main.corridor) back else main
 
         return RouteComparison(
             safe = safe.copy(recommended = true),
             fast = fast.copy(recommended = false)
+        )
+    }
+
+    /** Overrides each corridor's heuristic [RouteScore.safetyScore]/[RouteScore.facts] with the
+     *  model's own prediction/reason wherever [modelScores] has an entry for it (keyed
+     *  "main"/"back") — a corridor the model didn't score (no live route to send it, or the API
+     *  call only covered one side) keeps its heuristic score untouched. */
+    fun withModelScores(scores: Pair<RouteScore, RouteScore>, modelScores: Map<String, ModelRiskScore>): Pair<RouteScore, RouteScore> {
+        val (main, back) = scores
+        return applyModelScore(main, "main", modelScores) to applyModelScore(back, "back", modelScores)
+    }
+
+    private fun applyModelScore(score: RouteScore, id: String, modelScores: Map<String, ModelRiskScore>): RouteScore {
+        val model = modelScores[id] ?: return score
+        return score.copy(
+            safetyScore = model.safetyScore,
+            facts = listOf(RouteFact(model.reason, positive = true)) + score.facts,
+            scoredByModel = true,
+            modelReason = model.reason
         )
     }
 

@@ -14,6 +14,7 @@ val localProperties = Properties().apply {
     if (file.exists()) load(FileInputStream(file))
 }
 val mapsApiKey: String = localProperties.getProperty("MAPS_API_KEY") ?: ""
+val openAiApiKey: String = localProperties.getProperty("OPENAI_API_KEY") ?: ""
 
 android {
     namespace = "com.rakshika.app"
@@ -28,6 +29,7 @@ android {
 
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
+        buildConfigField("String", "OPENAI_API_KEY", "\"$openAiApiKey\"")
     }
 
     buildTypes {

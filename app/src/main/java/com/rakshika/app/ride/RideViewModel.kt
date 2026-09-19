@@ -12,6 +12,7 @@ import com.rakshika.app.geo.geoPointAt
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.location.DeviceLocation
+import com.rakshika.app.risk.OpenAiRiskScorer
 import com.rakshika.app.routing.GoogleRouting
 import com.rakshika.app.routing.RouteScoring
 import com.rakshika.app.search.PlaceSearch
@@ -133,8 +134,14 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
                 null
             }
 
-            // Scoring is pure math over the Directions response just fetched — no fictional corpus to retrieve from.
-            val comparison = RouteScoring.compare(geoRoutes)
+            // Heuristic scoring is pure math over the Directions response just fetched — no
+            // fictional corpus to retrieve from. Those same real facts are then handed to an LLM
+            // to predict the actual risk score shown on screen; on any failure (no key, offline,
+            // bad response) the heuristic score above is what's shown instead.
+            val rawScores = RouteScoring.rawScores(geoRoutes)
+            val modelScores = OpenAiRiskScorer.score(geoRoutes?.mainRoad, geoRoutes?.backLane)
+            val finalScores = if (modelScores != null) RouteScoring.withModelScores(rawScores, modelScores) else rawScores
+            val comparison = RouteScoring.finalize(finalScores)
             val routes = routePairFrom(comparison, geoRoutes)
 
             narrator.say(routes.summary)
