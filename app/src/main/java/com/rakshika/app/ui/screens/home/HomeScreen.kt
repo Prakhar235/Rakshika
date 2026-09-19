@@ -52,7 +52,7 @@ fun HomeScreen(
 
         Spacer(Modifier.height(28.dp))
 
-        Text("Rakshika", style = MaterialTheme.typography.titleLarge)
+        Text("Safe Maps", style = MaterialTheme.typography.titleLarge)
         Text(
             "You're protected. Hold the button below in an emergency.",
             style = MaterialTheme.typography.bodyMedium,

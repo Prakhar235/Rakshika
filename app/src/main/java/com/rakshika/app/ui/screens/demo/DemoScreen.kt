@@ -327,7 +327,7 @@ private fun DemoHomeView(state: DemoState) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(16.dp))
-        Text("Rakshika", style = MaterialTheme.typography.titleMedium)
+        Text("Safe Maps", style = MaterialTheme.typography.titleMedium)
         Text(
             "You're protected. Hold the button below in an emergency.",
             style = MaterialTheme.typography.bodySmall,

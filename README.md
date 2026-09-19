@@ -1,6 +1,6 @@
-# Rakshika — demo build
+# Safe Maps — demo build
 
-A demo-ready Android app (Kotlin + Jetpack Compose) covering the core Rakshika
+A demo-ready Android app (Kotlin + Jetpack Compose) covering the core Safe Maps
 flows: hold-to-trigger SOS, a check-in timer, a mock live-location map,
 an activity timeline, emergency contacts, and a fake-call decoy screen.
 
@@ -47,11 +47,11 @@ data — no backend, API keys, or permissions are required to demo it.
 
 SMS is the **offline fallback**. When the phone has usable data the alert goes
 over Firebase (live tracking); **only when there's no data connection** does
-Rakshika send a background SMS instead — checked per alert via `Connectivity`
+Safe Maps send a background SMS instead — checked per alert via `Connectivity`
 (the Home online/offline toggle also forces this path for demoing).
 
 The **Contacts** tab configures the numbers to alert. Toggle **Background SMS
-alerts** to grant the `SEND_SMS` permission once; after that Rakshika sends a
+alerts** to grant the `SEND_SMS` permission once; after that Safe Maps sends a
 plain-text SMS **in the background** — no app opens, no tap — via `SmsManager`
 to every number that has alerts on, when:
 

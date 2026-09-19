@@ -1,5 +1,7 @@
 <resources>
     <style name="Theme.Rakshika" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/splash_background</item>
+        <!-- Android 12+ shows the launcher icon on this colour before our first frame. -->
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
     </style>
 </resources>

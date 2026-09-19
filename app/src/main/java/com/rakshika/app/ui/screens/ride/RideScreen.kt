@@ -289,7 +289,7 @@ private fun RoutesStep(
 
             if (!state.safeSelected) {
                 Text(
-                    "You've picked the lower-scoring route. Rakshika recommends the " +
+                    "You've picked the lower-scoring route. Safe Maps recommends the " +
                         "${routes.safe.label.lowercase()} (${routes.safe.safetyScore}/100).",
                     style = MaterialTheme.typography.labelSmall,
                     color = RakshikaAmber

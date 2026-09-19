@@ -111,7 +111,7 @@ object DemoScript {
     val routeBeats = listOf(
         DemoBeat(
             view = DemoView.MAP,
-            caption = "Before Priya starts walking, Rakshika compares routes to her destination — not just for speed.",
+            caption = "Before Priya starts walking, Safe Maps compares routes to her destination — not just for speed.",
             teleStatus = "Finding route",
             teleDetail = "Hostel → MG Road Metro",
             teleContacts = "—",
@@ -134,7 +134,7 @@ object DemoScript {
         ),
         DemoBeat(
             view = DemoView.MAP,
-            caption = "So Rakshika recommends the main road instead — busier, better lit, and barely slower.",
+            caption = "So Safe Maps recommends the main road instead — busier, better lit, and barely slower.",
             teleStatus = "Route B recommended",
             teleDetail = "Well-lit · high foot traffic",
             teleContacts = "—",
