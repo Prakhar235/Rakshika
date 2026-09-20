@@ -1,7 +1,9 @@
 <resources>
     <style name="Theme.Rakshika" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/splash_background</item>
-        <!-- Android 12+ shows the launcher icon on this colour before our first frame. -->
+        <!-- Android 12+ system splash: our pin (not the launcher icon, whose backdrop is a map
+             tile) on the same colour as the Compose splash's fade-out. -->
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_icon</item>
     </style>
 </resources>

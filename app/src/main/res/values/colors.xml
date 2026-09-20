@@ -1,5 +1,4 @@
 <resources>
-    <color name="ic_launcher_background">#D8365E</color>
     <!-- Window / system-splash background; matches SurfacePage so the hand-off to the Compose
          splash (ui/screens/splash) and to the app itself has no colour jump. -->
     <color name="splash_background">#F7F6F3</color>

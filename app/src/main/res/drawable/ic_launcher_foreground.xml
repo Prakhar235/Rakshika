@@ -1,15 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Destination pin, tip at (54,68), head radius 13 — the same teardrop the splash drops in. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,20 L78,30 V54 C78,72 66,84 54,90 C42,84 30,72 30,54 V30 Z" />
+        android:fillColor="#2E000000"
+        android:pathData="M54,68 m-9,0 a9,3 0 1,0 18,0 a9,3 0 1,0 -18,0" />
     <path
         android:fillColor="#D8365E"
-        android:pathData="M54,32 L69,38 V54 C69,66 62,74 54,79 C46,74 39,66 39,54 V38 Z" />
+        android:pathData="M54,68 L65.77,42.98 A13,13 0 1 0 42.23,42.98 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M50,52 L53,58 L64,44 L66,46 L54,64 L48,55 Z" />
+        android:pathData="M54,37.45 m-5.46,0 a5.46,5.46 0 1,0 10.92,0 a5.46,5.46 0 1,0 -10.92,0" />
 </vector>

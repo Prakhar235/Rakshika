@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon (Android 13+) layer: the pin silhouette with the white dot cut out. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#000000"
+        android:fillType="evenOdd"
+        android:pathData="M54,68 L65.77,42.98 A13,13 0 1 0 42.23,42.98 Z
+                          M54,37.45 m-5.46,0 a5.46,5.46 0 1,0 10.92,0 a5.46,5.46 0 1,0 -10.92,0" />
+</vector>
