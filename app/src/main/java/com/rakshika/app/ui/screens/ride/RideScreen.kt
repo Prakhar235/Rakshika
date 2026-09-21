@@ -50,6 +50,7 @@ import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareStatus
 import com.rakshika.app.location.DeviceLocation
 import com.rakshika.app.routing.RouteFact
+import com.rakshika.app.routing.key
 import com.rakshika.app.ride.ORIGIN
 import com.rakshika.app.ride.Place
 import com.rakshika.app.ride.RideState
@@ -76,7 +77,7 @@ fun RideScreen(viewModel: RideViewModel = viewModel()) {
             )
             RideStep.ROUTES -> RoutesStep(state, viewModel::selectRoute, viewModel::backToSearch, viewModel::startRide)
             RideStep.RIDING -> RidingStep(state, liveStatus, viewModel::triggerSos, viewModel::reroute)
-            RideStep.ARRIVED -> ArrivedStep(state, viewModel::newRide)
+            RideStep.ARRIVED -> ArrivedStep(state, viewModel::newRide, viewModel::submitFeedback)
         }
     }
 }
@@ -285,6 +286,9 @@ private fun RoutesStep(
             RouteCard(routes.safe, selected = state.safeSelected, accent = RakshikaGreen) { onSelectRoute(true) }
             RouteCard(routes.fast, selected = !state.safeSelected, accent = RakshikaRed) { onSelectRoute(false) }
 
+            state.assessment?.let {
+                AiAnalysisPanel(it, chosen.corridor.key, state.accuracy, aiStateOf(it, state.aiAnalyzing, tripOver = false))
+            }
             if (chosen.facts.isNotEmpty()) RouteFactsPanel(chosen)
 
             if (!state.safeSelected) {
@@ -707,10 +711,10 @@ private fun RideSosButton(onTriggered: () -> Unit, modifier: Modifier = Modifier
 /* ---------------- Arrived ---------------- */
 
 @Composable
-private fun ArrivedStep(state: RideState, onNewRide: () -> Unit) {
+private fun ArrivedStep(state: RideState, onNewRide: () -> Unit, onSubmitFeedback: (Int, Map<String, Int>) -> Unit) {
     val destination = state.destination
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -728,7 +732,27 @@ private fun ArrivedStep(state: RideState, onNewRide: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Text("Amma and Rohan were notified automatically.", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
+        // Only trips that were assessed on live route data can be rated and learned from. The AI
+        // analysis has been running in the background since the ride started; the rating form waits
+        // for it (it is built from the equation the AI settled on) — normally it's long done by now.
+        state.assessment?.let { assessment ->
+            val chosenKey = assessment.chosenCorridor
+            if (chosenKey != null) {
+                AiAnalysisPanel(assessment, chosenKey, state.accuracy, aiStateOf(assessment, state.aiAnalyzing, tripOver = true))
+                Spacer(Modifier.height(12.dp))
+            }
+            if (state.aiAnalyzing) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = RakshikaRed)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Finishing the AI analysis of your route…", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                }
+            } else {
+                TripFeedbackSection(assessment, state.feedbackSubmitting, onSubmitFeedback)
+            }
+        }
+        Spacer(Modifier.height(20.dp))
         Button(onClick = onNewRide, colors = ButtonDefaults.buttonColors(containerColor = RakshikaRed)) {
             Text("Plan another ride")
         }

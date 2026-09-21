@@ -4,6 +4,8 @@ import com.rakshika.app.data.model.ContactStatus
 import com.rakshika.app.geo.pathLengthMeters
 import com.rakshika.app.geo.remainingGeoPath
 import com.rakshika.app.live.LiveShareConfig
+import com.rakshika.app.risk.AccuracyStats
+import com.rakshika.app.risk.AssessmentRecord
 import com.rakshika.app.routing.RouteComparison
 import com.rakshika.app.routing.RouteCorridor
 import com.rakshika.app.routing.RouteFact
@@ -150,7 +152,16 @@ data class RideState(
     val contactRohan: ContactStatus? = null,
     val sosActive: Boolean = false,
     /** True while a mid-ride reroute is being recalculated from the marker's current position. */
-    val rerouting: Boolean = false
+    val rerouting: Boolean = false,
+    /** The stored model assessment behind the scores on screen — its equation, confidence, data
+     *  sources and explanation drive the "AI analysis" panel, and later the post-trip feedback form. */
+    val assessment: AssessmentRecord? = null,
+    /** How well past predictions matched riders' own ratings — shown in the AI analysis panel. */
+    val accuracy: AccuracyStats? = null,
+    /** True while the model's deeper analysis of the chosen route runs in the background (started with the ride). */
+    val aiAnalyzing: Boolean = false,
+    /** True while the rider's feedback is being sent to the model to learn from. */
+    val feedbackSubmitting: Boolean = false
 ) {
     val suggestions: List<Place>
         get() = when {

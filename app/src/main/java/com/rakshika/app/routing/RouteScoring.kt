@@ -21,8 +21,8 @@ data class RouteScore(
     /** True when this score is grounded in a real Directions route; false means Directions found
      *  none for this corridor and the app is showing/scoring the offline mock path instead. */
     val isLive: Boolean,
-    /** True when [safetyScore]/[facts] came from [com.rakshika.app.risk.OpenAiRiskScorer] rather
-     *  than the local heuristic below — see [RouteScoring.withModelScores]. */
+    /** True when [safetyScore]/[facts] came from the AI model ([com.rakshika.app.risk.RiskLoop])
+     *  rather than the local heuristic below or the on-device equation — see [RouteScoring.withModelScores]. */
     val scoredByModel: Boolean = false,
     /** The model's own one-sentence explanation for [safetyScore], verbatim from its response —
      *  null unless [scoredByModel] is true. Kept separate from [facts] so the UI can show it as
@@ -32,9 +32,10 @@ data class RouteScore(
 
 data class RouteComparison(val safe: RouteScore, val fast: RouteScore)
 
-/** One corridor's model-predicted score, same scale as [RouteScore.safetyScore] (1-99, higher =
- *  safer) — see [com.rakshika.app.risk.OpenAiRiskScorer]. */
-data class ModelRiskScore(val corridorId: String, val safetyScore: Int, val reason: String)
+/** One corridor's predicted score, same scale as [RouteScore.safetyScore] (1-99, higher = safer) —
+ *  see [com.rakshika.app.risk.RiskLoop]. [fromModel] is false when the AI model was unreachable and
+ *  the on-device equation produced the number instead. */
+data class ModelRiskScore(val corridorId: String, val safetyScore: Int, val reason: String, val fromModel: Boolean = true)
 
 /**
  * Scores each corridor from the real Directions API data Google returned for the route just
@@ -60,8 +61,8 @@ object RouteScoring {
     /**
      * The per-corridor heuristic score/facts, before deciding which one is "safe" vs "fast" —
      * this is the seam [RideViewModel][com.rakshika.app.ride.RideViewModel] uses to hand the same
-     * real Directions facts to [com.rakshika.app.risk.OpenAiRiskScorer] and, if that call
-     * succeeds, override the numbers below via [withModelScores] before calling [finalize].
+     * real Directions facts to [com.rakshika.app.risk.RiskLoop] and override the numbers below
+     * via [withModelScores] with what it predicts before calling [finalize].
      */
     fun rawScores(routes: RoutingResult?): Pair<RouteScore, RouteScore> {
         val mainRoute = routes?.mainRoad
@@ -103,8 +104,8 @@ object RouteScoring {
         val model = modelScores[id] ?: return score
         return score.copy(
             safetyScore = model.safetyScore,
-            facts = listOf(RouteFact(model.reason, positive = true)) + score.facts,
-            scoredByModel = true,
+            facts = listOf(RouteFact(model.reason, positive = model.fromModel)) + score.facts,
+            scoredByModel = model.fromModel,
             modelReason = model.reason
         )
     }

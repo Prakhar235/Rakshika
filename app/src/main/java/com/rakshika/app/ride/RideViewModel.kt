@@ -12,9 +12,16 @@ import com.rakshika.app.geo.geoPointAt
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.live.LiveShareRepository
 import com.rakshika.app.location.DeviceLocation
-import com.rakshika.app.risk.OpenAiRiskScorer
+import com.rakshika.app.risk.AssessmentRecord
+import com.rakshika.app.risk.PredictionSource
+import com.rakshika.app.risk.RiskLoop
+import com.rakshika.app.risk.TripFeedback
+import com.rakshika.app.routing.GeoRoute
 import com.rakshika.app.routing.GoogleRouting
+import com.rakshika.app.routing.ModelRiskScore
+import com.rakshika.app.routing.RouteCorridor
 import com.rakshika.app.routing.RouteScoring
+import com.rakshika.app.routing.key
 import com.rakshika.app.search.PlaceSearch
 import com.rakshika.app.ui.mapkit.ROUTE_B
 import com.rakshika.app.voice.Narrator
@@ -33,9 +40,14 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     private val live = LiveShareRepository(viewModelScope)
     private val contactsStore = ContactsStore(app)
     private val narrator = Narrator(app)
+    private val riskLoop = RiskLoop(app)
     private var rideJob: Job? = null
     private var assessJob: Job? = null
     private var searchJob: Job? = null
+    private var analysisJob: Job? = null
+
+    /** The live routes behind the current assessment, kept for the background model analysis at ride start. */
+    private var assessedRoutes: Map<String, GeoRoute> = emptyMap()
 
     /** Search-bias / routing origin: the device's real location once found, else the demo's fixed one. */
     private var originGeo: DoubleArray = LiveShareConfig.ORIGIN_GEO
@@ -43,6 +55,11 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     /** Firebase publish state + path, for the "Sharing live" chip on the ride screen. */
     val liveStatus = live.status
     val liveTripUrl = live.tripUrl
+
+    init {
+        // Rated trips whose learning call failed earlier (offline / model error) get another go, off the main flow.
+        viewModelScope.launch { riskLoop.retryPendingLearning() }
+    }
 
     /** Tries the device's last-known location (if permission was granted); falls back to the demo default. */
     fun refreshDeviceLocation() {
@@ -100,6 +117,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     fun backToSearch() {
         rideJob?.cancel()
         assessJob?.cancel()
+        analysisJob?.cancel()
         live.endTrip()
         narrator.stop()
         _state.update {
@@ -134,16 +152,27 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
                 null
             }
 
-            // Heuristic scoring is pure math over the Directions response just fetched — no
-            // fictional corpus to retrieve from. Those same real facts are then handed to an LLM
-            // to predict the actual risk score shown on screen; on any failure (no key, offline,
-            // bad response) the heuristic score above is what's shown instead.
+            // The heuristic is pure math over the Directions response just fetched — it keeps
+            // supplying the plain-language facts. The score itself comes from the current safety
+            // equation, run on-device so picking a destination never waits on the network; the
+            // model's deeper analysis runs in the background once the ride starts (see startRide).
+            // With no live route to measure there's nothing to assess, so the heuristic stands alone.
             val rawScores = RouteScoring.rawScores(geoRoutes)
-            val modelScores = OpenAiRiskScorer.score(geoRoutes?.mainRoad, geoRoutes?.backLane)
-            val finalScores = if (modelScores != null) RouteScoring.withModelScores(rawScores, modelScores) else rawScores
+            val liveRoutes = buildMap {
+                geoRoutes?.mainRoad?.let { put(RouteCorridor.MAIN_ROAD.key, it) }
+                geoRoutes?.backLane?.let { put(RouteCorridor.BACK_LANE.key, it) }
+            }
+            assessedRoutes = liveRoutes
+            val assessment = if (liveRoutes.isNotEmpty()) riskLoop.assessLocal(liveRoutes) else null
+            val finalScores = if (assessment != null) {
+                RouteScoring.withModelScores(rawScores, assessment.toModelScores())
+            } else {
+                rawScores
+            }
             val comparison = RouteScoring.finalize(finalScores)
             val routes = routePairFrom(comparison, geoRoutes)
 
+            val accuracy = riskLoop.accuracy()
             narrator.say(routes.summary)
 
             _state.update {
@@ -151,10 +180,16 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
                     step = if (keepStep) it.step else RideStep.ROUTES,
                     assessing = false,
                     routes = routes,
-                    safeSelected = true
+                    safeSelected = true,
+                    assessment = assessment,
+                    accuracy = accuracy
                 )
             }
         }
+    }
+
+    private fun AssessmentRecord.toModelScores(): Map<String, ModelRiskScore> = corridors.associate {
+        it.id to ModelRiskScore(it.id, it.predictedScore, it.reason, fromModel = it.source == PredictionSource.MODEL)
     }
 
     /** Starts the ride: contacts are notified immediately, then the dot walks the chosen route in real time. */
@@ -162,8 +197,14 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         val routes = _state.value.routes ?: return
         val chosen = if (_state.value.safeSelected) routes.safe else routes.fast
 
+        // Remember which corridor was actually taken (the post-trip feedback is about that one), and
+        // run the model's deeper analysis while the ride is under way — ready by the time it ends.
+        _state.value.assessment?.let { startBackgroundAnalysis(it, chosen.corridor.key) }
+
         _state.update {
             it.copy(
+                assessment = it.assessment?.copy(chosenCorridor = chosen.corridor.key),
+                aiAnalyzing = it.assessment != null,
                 step = RideStep.RIDING,
                 rideProgress = 0f,
                 etaMinutesLeft = chosen.minutes,
@@ -276,6 +317,48 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * The slow part of the loop, off the ride flow: the model gets the stored measurements (and may
+     * fetch OSM / weather / Places data) and upgrades the assessment with its modified equation,
+     * confidence and explanation. The on-screen route scores are left alone; if the model is
+     * unreachable the on-device assessment simply stays, and the trip can still be rated.
+     */
+    private fun startBackgroundAnalysis(assessment: AssessmentRecord, corridorKey: String) {
+        analysisJob?.cancel()
+        val routes = assessedRoutes
+        analysisJob = viewModelScope.launch {
+            riskLoop.recordChoice(assessment.id, corridorKey)
+            val refined = riskLoop.refineWithModel(assessment.id, routes)
+            val accuracy = riskLoop.accuracy()
+            _state.update {
+                if (it.assessment?.id != assessment.id) it
+                else it.copy(aiAnalyzing = false, assessment = refined ?: it.assessment, accuracy = accuracy)
+            }
+        }
+    }
+
+    /**
+     * Sends the rider's post-trip ratings — [overall] (1-5) and per-input [perFeature] (1-5, keyed by
+     * feature) — to the model along with the stored assessment, to learn a better equation. The
+     * feedback is saved first, so if the model call fails it is retried on the next search.
+     */
+    fun submitFeedback(overall: Int, perFeature: Map<String, Int>) {
+        val assessment = _state.value.assessment ?: return
+        if (_state.value.feedbackSubmitting || _state.value.aiAnalyzing || assessment.feedback != null) return
+        val feedback = TripFeedback(overall.coerceIn(1, 5), perFeature, System.currentTimeMillis())
+
+        _state.update { it.copy(feedbackSubmitting = true, assessment = assessment.copy(feedback = feedback)) }
+        viewModelScope.launch {
+            val updated = riskLoop.submitFeedback(assessment.id, feedback)
+            val accuracy = riskLoop.accuracy()
+            // The rider may have moved on to a new ride while the model was thinking.
+            _state.update {
+                if (it.assessment?.id != assessment.id) it
+                else it.copy(feedbackSubmitting = false, assessment = updated ?: it.assessment, accuracy = accuracy)
+            }
+        }
+    }
+
     fun triggerSos() {
         live.setSos(true)
         val path = chosenGeoPath()
@@ -293,6 +376,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
     fun newRide() {
         rideJob?.cancel()
         assessJob?.cancel()
+        analysisJob?.cancel()
         live.endTrip()
         narrator.stop()
         _state.update {
@@ -307,6 +391,7 @@ class RideViewModel(app: Application) : AndroidViewModel(app) {
         rideJob?.cancel()
         assessJob?.cancel()
         searchJob?.cancel()
+        analysisJob?.cancel()
         narrator.shutdown()
         super.onCleared()
     }
