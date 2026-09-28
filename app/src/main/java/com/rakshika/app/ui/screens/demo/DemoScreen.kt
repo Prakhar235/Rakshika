@@ -54,17 +54,25 @@ import com.rakshika.app.ui.mapkit.pointAt
 import com.rakshika.app.ui.screens.ride.RideScreen
 import com.rakshika.app.ui.theme.*
 
-private enum class DemoMode { WATCH, RIDE }
+private enum class DemoMode { WATCH, RIDE, ANALYSIS }
 
 @Composable
-fun DemoScreen() {
+fun DemoScreen(onFakeCall: (() -> Unit)? = null, onFullScreenChange: (Boolean) -> Unit = {}) {
     var mode by remember { mutableStateOf(DemoMode.WATCH) }
+    // A ride under way takes the whole screen — the demo header and tabs step aside.
+    var rideFullScreen by remember { mutableStateOf(false) }
+    // Past the search step the ride flow's map needs the height more than the demo intro does.
+    var rideCompact by remember { mutableStateOf(false) }
+    val fullScreen = rideFullScreen && mode == DemoMode.RIDE
+    val hideHeader = (rideFullScreen || rideCompact) && mode == DemoMode.RIDE
+    LaunchedEffect(fullScreen) { onFullScreenChange(fullScreen) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(SurfacePage)
     ) {
+        if (!hideHeader) {
         Column(Modifier.padding(20.dp, 20.dp, 20.dp, 0.dp)) {
             Text("Demo", style = MaterialTheme.typography.titleLarge)
             Text(
@@ -79,12 +87,17 @@ fun DemoScreen() {
         ModeToggle(mode = mode, onChange = { mode = it }, modifier = Modifier.padding(horizontal = 20.dp))
 
         Spacer(Modifier.height(4.dp))
+        }
 
         Box(Modifier.weight(1f)) {
-            if (mode == DemoMode.WATCH) {
-                NarratedDemoContent()
-            } else {
-                RideScreen()
+            when (mode) {
+                DemoMode.WATCH -> NarratedDemoContent()
+                DemoMode.RIDE -> RideScreen(
+                    onFakeCall = onFakeCall,
+                    onFullScreenChange = { rideFullScreen = it },
+                    onCompactChange = { rideCompact = it }
+                )
+                DemoMode.ANALYSIS -> AnalysisScreen()
             }
         }
     }
@@ -102,6 +115,7 @@ private fun ModeToggle(mode: DemoMode, onChange: (DemoMode) -> Unit, modifier: M
     ) {
         ModeTab("Watch demo", mode == DemoMode.WATCH, Modifier.weight(1f)) { onChange(DemoMode.WATCH) }
         ModeTab("Try it yourself", mode == DemoMode.RIDE, Modifier.weight(1f)) { onChange(DemoMode.RIDE) }
+        ModeTab("Analysis", mode == DemoMode.ANALYSIS, Modifier.weight(1f)) { onChange(DemoMode.ANALYSIS) }
     }
 }
 

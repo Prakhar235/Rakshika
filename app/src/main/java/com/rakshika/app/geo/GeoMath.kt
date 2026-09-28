@@ -67,3 +67,35 @@ fun remainingGeoPath(path: List<DoubleArray>, t: Float): List<DoubleArray> {
     }
     return listOf(here, path.last())
 }
+
+/**
+ * Where [point] sits relative to [path]: the fraction (0..1, by arc length) of the closest point on
+ * the path, and how far [point] is from it in meters — for turning a real GPS fix into ride progress.
+ */
+fun projectOnPath(path: List<DoubleArray>, point: DoubleArray): Pair<Float, Double> {
+    if (path.size < 2) return 0f to (path.firstOrNull()?.let { haversineMeters(it, point) } ?: 0.0)
+    // Flat metres around the fix — plenty accurate over a walking/riding route.
+    val kx = 111_320.0 * Math.cos(Math.toRadians(point[0]))
+    fun xy(p: DoubleArray) = doubleArrayOf((p[1] - point[1]) * kx, (p[0] - point[0]) * 110_540.0)
+
+    var total = 0.0
+    var bestAlong = 0.0
+    var bestDist = Double.MAX_VALUE
+    for (i in 1 until path.size) {
+        val a = xy(path[i - 1])
+        val b = xy(path[i])
+        val dx = b[0] - a[0]
+        val dy = b[1] - a[1]
+        val len = Math.hypot(dx, dy)
+        // The fix is the origin of this projection, so project (0,0) onto segment a→b.
+        val t = if (len == 0.0) 0.0 else ((-a[0]) * dx + (-a[1]) * dy).div(len * len).coerceIn(0.0, 1.0)
+        val d = Math.hypot(a[0] + t * dx, a[1] + t * dy)
+        if (d < bestDist) {
+            bestDist = d
+            bestAlong = total + t * len
+        }
+        total += len
+    }
+    val fraction = if (total == 0.0) 0f else (bestAlong / total).toFloat().coerceIn(0f, 1f)
+    return fraction to bestDist
+}

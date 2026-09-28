@@ -29,8 +29,8 @@ object AlertMessages {
         return sb.toString()
     }
 
-    fun sosHome(): String =
-        "$MARKER SOS - I need help now. Please call me. ${link("SOS")}"
+    fun sosHome(lat: Double? = null, lng: Double? = null): String =
+        "$MARKER SOS - I need help now. Please call me. ${link("SOS", lat, lng)}"
 
     fun sosRide(destination: String, lat: Double, lng: Double): String =
         "$MARKER SOS en route to $destination. ${link("SOS", lat, lng, destination)}"

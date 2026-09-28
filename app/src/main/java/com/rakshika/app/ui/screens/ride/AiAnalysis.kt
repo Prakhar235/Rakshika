@@ -46,9 +46,9 @@ import com.rakshika.app.risk.EquationSource
 import com.rakshika.app.risk.FeatureCatalog
 import com.rakshika.app.risk.LearningOutcome
 import com.rakshika.app.ui.theme.BorderHairline
-import com.rakshika.app.ui.theme.RakshikaAmber
-import com.rakshika.app.ui.theme.RakshikaGreen
-import com.rakshika.app.ui.theme.RakshikaGreenBg
+import com.rakshika.app.ui.theme.RoseMid
+import com.rakshika.app.ui.theme.RosePink
+import com.rakshika.app.ui.theme.RosePinkBg
 import com.rakshika.app.ui.theme.RakshikaRed
 import com.rakshika.app.ui.theme.SurfaceCard
 import com.rakshika.app.ui.theme.TextPrimary
@@ -105,7 +105,7 @@ internal fun AiAnalysisPanel(assessment: AssessmentRecord, corridorId: String, a
                 color = TextPrimary
             )
             Spacer(Modifier.width(8.dp))
-            Chip("Confidence ${pct(corridor.confidence)}", RakshikaGreen, RakshikaGreenBg)
+            Chip("Confidence ${pct(corridor.confidence)}", RosePink, RosePinkBg)
             Spacer(Modifier.weight(1f))
             Icon(
                 if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
@@ -137,7 +137,7 @@ internal fun AiAnalysisPanel(assessment: AssessmentRecord, corridorId: String, a
                 "The AI analysis couldn't run (offline or a model error), so the on-device equation's score stands. " +
                     "You can still rate this trip and it will be learned from.",
                 style = MaterialTheme.typography.labelSmall,
-                color = RakshikaAmber
+                color = RoseMid
             )
             AiState.DONE -> Unit
         }
@@ -190,7 +190,7 @@ internal fun AiAnalysisPanel(assessment: AssessmentRecord, corridorId: String, a
             Text(
                 "The AI's prediction (${corridor.predictedScore}) differs from the equation's output (${corridor.equationScore}) — see the reasoning above.",
                 style = MaterialTheme.typography.labelSmall,
-                color = RakshikaAmber
+                color = RoseMid
             )
         }
 
@@ -337,7 +337,7 @@ internal fun TripFeedbackSection(
                     onClick = { onSubmit(overall, perFeature.toMap()) },
                     enabled = overall > 0,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = RakshikaGreen)
+                    colors = ButtonDefaults.buttonColors(containerColor = RosePink)
                 ) { Text("Send feedback") }
             }
         }
@@ -350,7 +350,7 @@ private fun LearningResultCard(learning: LearningOutcome, stars: Int) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(RakshikaGreenBg)
+            .background(RosePinkBg)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -381,7 +381,7 @@ private fun StarRow(value: Int, onChange: (Int) -> Unit, size: Dp) {
             Icon(
                 if (i <= value) Icons.Filled.Star else Icons.Outlined.StarBorder,
                 contentDescription = "$i star${if (i == 1) "" else "s"}",
-                tint = if (i <= value) RakshikaAmber else TextSecondary,
+                tint = if (i <= value) RoseMid else TextSecondary,
                 modifier = Modifier.size(size).clickable { onChange(if (value == i) 0 else i) }
             )
         }

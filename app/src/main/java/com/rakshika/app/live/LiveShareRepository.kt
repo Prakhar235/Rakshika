@@ -36,9 +36,10 @@ class LiveShareRepository(private val scope: CoroutineScope) {
         get() = "${LiveShareConfig.DATABASE_URL}/liveTrips/${LiveShareConfig.TRIP_ID}"
 
     /** A single location fix along the way. [t] is 0..1 ride progress. [path] is `[lat, lng]` pairs. */
-    fun updateLocation(path: List<DoubleArray>, t: Float, etaMinutesLeft: Int) {
+    /** [at] is the real GPS position when there is one; without it the position is read off [path] at [t]. */
+    fun updateLocation(path: List<DoubleArray>, t: Float, etaMinutesLeft: Int, at: DoubleArray? = null) {
         if (!LiveShareConfig.isConfigured) return
-        val geo = geoPointAt(path, t)
+        val geo = at ?: geoPointAt(path, t)
         val body = JSONObject()
             .put("lat", geo[0])
             .put("lng", geo[1])

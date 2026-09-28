@@ -6,6 +6,7 @@ import com.rakshika.app.geo.remainingGeoPath
 import com.rakshika.app.live.LiveShareConfig
 import com.rakshika.app.risk.AccuracyStats
 import com.rakshika.app.risk.AssessmentRecord
+import com.rakshika.app.risk.RiskPatch
 import com.rakshika.app.routing.RouteComparison
 import com.rakshika.app.routing.RouteCorridor
 import com.rakshika.app.routing.RouteFact
@@ -54,7 +55,9 @@ data class RouteOption(
     /** True when [safetyScore] is the model-predicted risk score rather than the local heuristic — see [RouteScoring.withModelScores]. */
     val scoredByModel: Boolean = false,
     /** The model's own explanation for [safetyScore] when [scoredByModel] is true — see [RouteScore.modelReason]. */
-    val modelReason: String? = null
+    val modelReason: String? = null,
+    /** Major named road(s) the live route follows, from Directions' `summary` — null for the mock route. */
+    val via: String? = null
 )
 
 /** The real geo path for this option: live road-following polyline when found, else the fixed mock-map stand-in. */
@@ -73,7 +76,7 @@ fun RouteOption.rerouted(geoRoutes: RoutingResult?, progress: Float): RouteOptio
         RouteCorridor.BACK_LANE -> geoRoutes?.backLane
     }
     return if (real != null) {
-        copy(minutes = (real.durationSeconds / 60).roundToInt().coerceAtLeast(1), geoPath = real.points)
+        copy(minutes = (real.durationSeconds / 60).roundToInt().coerceAtLeast(1), geoPath = real.points, via = real.summary)
     } else {
         copy(geoPath = remainingGeoPath(resolvedGeoPath(), progress))
     }
@@ -106,7 +109,8 @@ private fun RouteScore.toRouteOption(geoRoutes: RoutingResult?): RouteOption {
         facts = facts,
         geoPath = real?.points,
         scoredByModel = scoredByModel,
-        modelReason = modelReason
+        modelReason = modelReason,
+        via = real?.summary
     )
 }
 
@@ -128,6 +132,13 @@ private fun summaryText(safe: RouteOption, fast: RouteOption): String {
     return "From Google's live routing: the ${safe.label.lowercase()} scores ${safe.safetyScore}/100 vs " +
         "${fast.safetyScore}/100 — ${lead.replaceFirstChar { it.lowercase() }} — $etaText."
 }
+
+/**
+ * Whether [route] can actually be ridden here. The demo may walk the built-in stand-in path, but in
+ * the real app a route with no real road geometry from Google doesn't lead anywhere, so it can't be
+ * picked or started.
+ */
+fun RideState.isWalkable(route: RouteOption): Boolean = !realMotion || route.geoPath != null
 
 enum class RideStep { SEARCH, ROUTES, RIDING, ARRIVED }
 
@@ -161,17 +172,32 @@ data class RideState(
     /** True while the model's deeper analysis of the chosen route runs in the background (started with the ride). */
     val aiAnalyzing: Boolean = false,
     /** True while the rider's feedback is being sent to the model to learn from. */
-    val feedbackSubmitting: Boolean = false
+    val feedbackSubmitting: Boolean = false,
+    /** OSM-flagged risky stretches per corridor key (see [com.rakshika.app.risk.RiskPatches]); a null value means that route's lookup failed. */
+    val riskPatches: Map<String, List<RiskPatch>?> = emptyMap(),
+    val patchesLoading: Boolean = false,
+    /** True in the real app (Map tab): ride progress follows the phone's GPS instead of a simulated walk. */
+    val realMotion: Boolean = false,
+    /** The latest real GPS fix during a real ride, `[lat, lng]`, and its accuracy. */
+    val liveFix: DoubleArray? = null,
+    val fixAccuracyM: Float? = null,
+    /** How far the latest real fix is from the chosen route, in meters. */
+    val offRouteMeters: Double? = null,
+    /** Saved emergency contacts that get SMS alerts — the real app shows these instead of the demo's Amma and Rohan. */
+    val alertContacts: List<String> = emptyList(),
+    /** True while the real app waits for a first GPS fix to search and route from. */
+    val waitingForFix: Boolean = false
 ) {
     val suggestions: List<Place>
         get() = when {
             // Real places actually near the device once the Places API has answered; the static
             // coordinate-less list is only a fallback for offline/no-permission/no-fix.
-            query.isBlank() -> nearbyResults ?: PLACES.take(5)
+            // The real app never offers them — a place without coordinates can't be routed or walked for real.
+            query.isBlank() -> nearbyResults ?: if (realMotion) emptyList() else PLACES.take(5)
             // While a live search is in flight, don't show the (coordinate-less) local
             // fallback — tapping it before the Places API replies would silently lose lat/lng
             // and fall back to the mock route instead of a real routed one.
             searching -> emptyList()
-            else -> searchResults ?: localPlaces(query)
+            else -> searchResults ?: if (realMotion) emptyList() else localPlaces(query)
         }
 }

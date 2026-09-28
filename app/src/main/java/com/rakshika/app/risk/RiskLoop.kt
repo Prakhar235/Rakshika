@@ -35,6 +35,12 @@ class RiskLoop(context: Context) {
 
     suspend fun accuracy(): AccuracyStats = withContext(Dispatchers.IO) { store.accuracy() }
 
+    /** The equation the next assessment would start from: the latest learned version, or the built-in seed. */
+    suspend fun currentEquationVersion(): EquationVersion = withContext(Dispatchers.IO) { store.currentEquation() }
+
+    /** Every equation version ever adopted, oldest first — for showing how the equation has evolved. */
+    suspend fun equationHistory(): List<EquationVersion> = withContext(Dispatchers.IO) { store.equationHistory() }
+
     /**
      * Scores [routes] (keyed "main"/"back", live corridors only) with the current equation and
      * stores the result as [PredictionSource.EQUATION]. Never touches the network and never waits

@@ -7,6 +7,7 @@ import com.rakshika.app.alerts.AlertMessages
 import com.rakshika.app.alerts.Connectivity
 import com.rakshika.app.alerts.ContactsStore
 import com.rakshika.app.alerts.SmsAlerts
+import com.rakshika.app.location.DeviceLocation
 import com.rakshika.app.data.model.AlertEvent
 import com.rakshika.app.data.model.EmergencyContact
 import com.rakshika.app.data.model.EventType
@@ -56,8 +57,32 @@ class RakshikaViewModel(app: Application) : AndroidViewModel(app) {
         Connectivity.demoForceOffline = !_uiState.value.isOnline
     }
 
-    fun triggerSos(note: String = "") {
-        val result = SmsAlerts.send(getApplication(), contactsStore.recipients(), AlertMessages.sosHome())
+    /**
+     * Home-screen SOS. Unlike ride alerts it always texts, online or not — outside a ride there's no
+     * live trip for contacts to be watching, so SMS is the only way they hear. Returns a plain line
+     * saying what actually happened, so the screen never claims help was called when it wasn't.
+     */
+    fun sendSos(): String {
+        val here = DeviceLocation.lastKnown(getApplication())
+        val result = triggerSos(alwaysSms = true, here = here)
+        return when {
+            !result.permission -> "SOS not sent — allow SMS for Safe Maps in the Contacts tab"
+            result.sent == 0 && result.failed == 0 -> "SOS not sent — add an emergency contact in the Contacts tab"
+            result.sent == 0 -> "SOS failed to send — call for help directly"
+            else -> "SOS sent to ${result.sent} contact${if (result.sent == 1) "" else "s"}" +
+                (if (here != null) " with your location" else "") +
+                (if (result.failed > 0) " (${result.failed} failed)" else "")
+        }
+    }
+
+    fun triggerSos(note: String = "", alwaysSms: Boolean = false, here: DoubleArray? = null): SmsAlerts.Result {
+        // Include where she is when the phone knows — contacts can open it straight on a map.
+        val result = SmsAlerts.send(
+            getApplication(),
+            contactsStore.recipients(),
+            AlertMessages.sosHome(here?.get(0), here?.get(1)),
+            onlyWhenOffline = !alwaysSms
+        )
         val reason = if (note.isNotBlank()) note else "SOS triggered · ${result.summary}"
 
         addEvent(EventType.SOS_TRIGGERED, reason)
@@ -67,6 +92,7 @@ class RakshikaViewModel(app: Application) : AndroidViewModel(app) {
             _uiState.update { it.copy(sosJustTriggered = false) }
         }
         cancelCheckIn(auto = false, note = "")
+        return result
     }
 
     fun shareLocation() {

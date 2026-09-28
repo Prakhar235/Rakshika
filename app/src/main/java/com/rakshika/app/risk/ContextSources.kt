@@ -27,7 +27,7 @@ data class SourceResult(val features: Map<String, Double>, val summary: JSONObje
  */
 object ContextSources {
     private const val TAG = "ContextSources"
-    private const val OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+    internal const val OVERPASS_URL = "https://overpass-api.de/api/interpreter"
     private const val METEO_URL = "https://api.open-meteo.com/v1/forecast"
     private const val PLACES_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
     private const val USER_AGENT = "SafeMaps-Android/0.1 (route safety research)"
@@ -136,7 +136,7 @@ object ContextSources {
         }.onFailure { Log.w(TAG, "Places parse failed", it) }.getOrNull()
     }
 
-    private fun http(
+    internal fun http(
         url: String,
         method: String = "GET",
         postBody: String? = null,
@@ -171,7 +171,7 @@ object ContextSources {
     }
 
     /** At most [max] points, evenly spaced along [points], always keeping the first and last. */
-    private fun downsample(points: List<DoubleArray>, max: Int): List<DoubleArray> {
+    internal fun downsample(points: List<DoubleArray>, max: Int): List<DoubleArray> {
         if (points.size <= max) return points
         return (0 until max).map { points[it * (points.size - 1) / (max - 1)] }
     }
