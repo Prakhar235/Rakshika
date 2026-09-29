@@ -1,0 +1,347 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		36181EB55EB992ED7E600792 /* Geo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2D40C1554561FAA99C5119 /* Geo.swift */; };
+		80496897010F74E00A64948F /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68A350C77C34CAA883A489E7 /* Models.swift */; };
+		08DB45986867537EC4B6B94F /* RideViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD2134E3F61AE1B36A125607 /* RideViewModel.swift */; };
+		C331EC6D7F425C001B41C951 /* RouteScoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = E87BD3DBB82D0FE37455DDF7 /* RouteScoring.swift */; };
+		5DB7C0FA30B3A8D1FE507408 /* SafetyEquation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97753706C4E6DEBF22C5B0B6 /* SafetyEquation.swift */; };
+		65AB37DEB2EF3C63C394CC17 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85BA2D3A351561863E08697B /* Theme.swift */; };
+		0EE871C4487F62D2D2B01FF8 /* SafeMapsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 093A5FDAFD6CCB8E7C01142A /* SafeMapsApp.swift */; };
+		EF1452E6C6D25DB03E2AD47D /* Alerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBD57FB78BD251385C171BA5 /* Alerts.swift */; };
+		9846887556FF52622963C8AD /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7501637CA125A8BF7C00259C /* AppState.swift */; };
+		6D257FB302F69CFD67E7061A /* LiveShare.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0D24E175C71C390FC19A969 /* LiveShare.swift */; };
+		223330E89CE1B9DE12ADF236 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D504925BD8C47FF403AC4032 /* LocationService.swift */; };
+		4684DD70E22833CBBC4CF373 /* RiskPatches.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CC87308EDDA24D3B7B2492 /* RiskPatches.swift */; };
+		692DECC9B8AE1FA9883D1674 /* Routing.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA17FBBBA5832ED89545D6F /* Routing.swift */; };
+		9661CEBCFA93A6799577837D /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D2CCD52555B39C89179102 /* Components.swift */; };
+		B5DED989790C2745DDDB35C8 /* OtherTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BEF62C62A6246E0F42ADA41 /* OtherTabs.swift */; };
+		18161C46AE13BDFA3641D970 /* RideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD2115B8E749BB69BBF3416 /* RideView.swift */; };
+		CA126D5B45EA13CF26FAC627 /* RouteMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F268734ACF889DDD999C053 /* RouteMapView.swift */; };
+		7392E02F06632F364C1E132E /* RouteSafetyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E27CD808B3984E5B9BDEAE4 /* RouteSafetyView.swift */; };
+		6EEEE39B1AB4355FA617C29C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 926215B008EBBA578C8620F6 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4F2D40C1554561FAA99C5119 /* Geo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geo.swift; sourceTree = "<group>"; };
+		68A350C77C34CAA883A489E7 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		FD2134E3F61AE1B36A125607 /* RideViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideViewModel.swift; sourceTree = "<group>"; };
+		E87BD3DBB82D0FE37455DDF7 /* RouteScoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteScoring.swift; sourceTree = "<group>"; };
+		97753706C4E6DEBF22C5B0B6 /* SafetyEquation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyEquation.swift; sourceTree = "<group>"; };
+		85BA2D3A351561863E08697B /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		093A5FDAFD6CCB8E7C01142A /* SafeMapsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafeMapsApp.swift; sourceTree = "<group>"; };
+		EBD57FB78BD251385C171BA5 /* Alerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Alerts.swift; sourceTree = "<group>"; };
+		7501637CA125A8BF7C00259C /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		D0D24E175C71C390FC19A969 /* LiveShare.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveShare.swift; sourceTree = "<group>"; };
+		D504925BD8C47FF403AC4032 /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
+		D0CC87308EDDA24D3B7B2492 /* RiskPatches.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiskPatches.swift; sourceTree = "<group>"; };
+		BDA17FBBBA5832ED89545D6F /* Routing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Routing.swift; sourceTree = "<group>"; };
+		A5D2CCD52555B39C89179102 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		9BEF62C62A6246E0F42ADA41 /* OtherTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtherTabs.swift; sourceTree = "<group>"; };
+		4BD2115B8E749BB69BBF3416 /* RideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RideView.swift; sourceTree = "<group>"; };
+		2F268734ACF889DDD999C053 /* RouteMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteMapView.swift; sourceTree = "<group>"; };
+		4E27CD808B3984E5B9BDEAE4 /* RouteSafetyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteSafetyView.swift; sourceTree = "<group>"; };
+		926215B008EBBA578C8620F6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BD69E47D82E914B1416E824A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		8B4DC3F4470964BD6CCFAEE2 /* SafeMaps.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SafeMaps.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4F6F5CC3FCCF73F75AE9CCF4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8D3FC6DB5D0827F168A73277 = {
+			isa = PBXGroup;
+			children = (
+				BB02FE6C4678B79B215868AF /* SafeMaps */,
+				86024CAD1E83101D97359D73 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		86024CAD1E83101D97359D73 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8B4DC3F4470964BD6CCFAEE2 /* SafeMaps.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BB02FE6C4678B79B215868AF /* SafeMaps */ = {
+			isa = PBXGroup;
+			children = (
+				093A5FDAFD6CCB8E7C01142A /* SafeMapsApp.swift */,
+				83791AAA3ABE9C740744D1DA /* Core */,
+				356CD26186F71FDDA8D2AB4D /* Services */,
+				91B42EC8C07BA594F68CC4BF /* Views */,
+				926215B008EBBA578C8620F6 /* Assets.xcassets */,
+				BD69E47D82E914B1416E824A /* Info.plist */,
+			);
+			path = SafeMaps;
+			sourceTree = "<group>";
+		};
+		83791AAA3ABE9C740744D1DA /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				4F2D40C1554561FAA99C5119 /* Geo.swift */,
+				68A350C77C34CAA883A489E7 /* Models.swift */,
+				FD2134E3F61AE1B36A125607 /* RideViewModel.swift */,
+				E87BD3DBB82D0FE37455DDF7 /* RouteScoring.swift */,
+				97753706C4E6DEBF22C5B0B6 /* SafetyEquation.swift */,
+				85BA2D3A351561863E08697B /* Theme.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		356CD26186F71FDDA8D2AB4D /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				EBD57FB78BD251385C171BA5 /* Alerts.swift */,
+				7501637CA125A8BF7C00259C /* AppState.swift */,
+				D0D24E175C71C390FC19A969 /* LiveShare.swift */,
+				D504925BD8C47FF403AC4032 /* LocationService.swift */,
+				D0CC87308EDDA24D3B7B2492 /* RiskPatches.swift */,
+				BDA17FBBBA5832ED89545D6F /* Routing.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		91B42EC8C07BA594F68CC4BF /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A5D2CCD52555B39C89179102 /* Components.swift */,
+				9BEF62C62A6246E0F42ADA41 /* OtherTabs.swift */,
+				4BD2115B8E749BB69BBF3416 /* RideView.swift */,
+				2F268734ACF889DDD999C053 /* RouteMapView.swift */,
+				4E27CD808B3984E5B9BDEAE4 /* RouteSafetyView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		42AEFBAE01D2DFD981F7DA7D /* SafeMaps */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 635EC1FCDBCFB43E5DD8BE7B /* Build configuration list for PBXNativeTarget "SafeMaps" */;
+			buildPhases = (
+				F2AB5FB218DA8B84623F4557 /* Sources */,
+				4F6F5CC3FCCF73F75AE9CCF4 /* Frameworks */,
+				55B558C7EF820E6E00E5993B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SafeMaps;
+			productName = SafeMaps;
+			productReference = 8B4DC3F4470964BD6CCFAEE2 /* SafeMaps.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		46F86FAA6BBF9AC94A7E4595 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1420;
+				LastUpgradeCheck = 1420;
+				TargetAttributes = {
+					42AEFBAE01D2DFD981F7DA7D = {
+						CreatedOnToolsVersion = 14.2;
+					};
+				};
+			};
+			buildConfigurationList = 314BFBDCE2E54CE0E31FB38A /* Build configuration list for PBXProject "SafeMaps" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 8D3FC6DB5D0827F168A73277;
+			productRefGroup = 86024CAD1E83101D97359D73 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				42AEFBAE01D2DFD981F7DA7D /* SafeMaps */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		55B558C7EF820E6E00E5993B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6EEEE39B1AB4355FA617C29C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F2AB5FB218DA8B84623F4557 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				36181EB55EB992ED7E600792 /* Geo.swift in Sources */,
+				80496897010F74E00A64948F /* Models.swift in Sources */,
+				08DB45986867537EC4B6B94F /* RideViewModel.swift in Sources */,
+				C331EC6D7F425C001B41C951 /* RouteScoring.swift in Sources */,
+				5DB7C0FA30B3A8D1FE507408 /* SafetyEquation.swift in Sources */,
+				65AB37DEB2EF3C63C394CC17 /* Theme.swift in Sources */,
+				0EE871C4487F62D2D2B01FF8 /* SafeMapsApp.swift in Sources */,
+				EF1452E6C6D25DB03E2AD47D /* Alerts.swift in Sources */,
+				9846887556FF52622963C8AD /* AppState.swift in Sources */,
+				6D257FB302F69CFD67E7061A /* LiveShare.swift in Sources */,
+				223330E89CE1B9DE12ADF236 /* LocationService.swift in Sources */,
+				4684DD70E22833CBBC4CF373 /* RiskPatches.swift in Sources */,
+				692DECC9B8AE1FA9883D1674 /* Routing.swift in Sources */,
+				9661CEBCFA93A6799577837D /* Components.swift in Sources */,
+				B5DED989790C2745DDDB35C8 /* OtherTabs.swift in Sources */,
+				18161C46AE13BDFA3641D970 /* RideView.swift in Sources */,
+				CA126D5B45EA13CF26FAC627 /* RouteMapView.swift in Sources */,
+				7392E02F06632F364C1E132E /* RouteSafetyView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		FA9139DD8B03E3F922556BF8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		FFE2104CCFAB79205AC64460 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5300D7EBF50D2A4907AFFF78 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SafeMaps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Safe Maps";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Safe Maps uses your location to find safe routes from where you are, follow your ride, and include where you are in an SOS.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Safe Maps keeps following your ride when the phone is locked, so your contacts can see you until you arrive.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rakshika.safemaps;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		6A9C4D09739760F1345B2D45 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SafeMaps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Safe Maps";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Safe Maps uses your location to find safe routes from where you are, follow your ride, and include where you are in an SOS.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Safe Maps keeps following your ride when the phone is locked, so your contacts can see you until you arrive.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rakshika.safemaps;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		314BFBDCE2E54CE0E31FB38A /* Build configuration list for PBXProject "SafeMaps" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA9139DD8B03E3F922556BF8 /* Debug */,
+				FFE2104CCFAB79205AC64460 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		635EC1FCDBCFB43E5DD8BE7B /* Build configuration list for PBXNativeTarget "SafeMaps" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5300D7EBF50D2A4907AFFF78 /* Debug */,
+				6A9C4D09739760F1345B2D45 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+}
